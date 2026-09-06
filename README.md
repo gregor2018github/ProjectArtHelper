@@ -9,9 +9,10 @@ in an image editor.
 - Pick any `.png` / `.jpg` / `.jpeg` / `.bmp` / `.tif` / `.webp`; the file
   dialog opens on your Desktop.
 - Adjustable line thickness (default 2 px) and colour (default red).
-- Grid spacing suggestions computed from the image size, showing the resulting
-  cell count — e.g. `250 px (4 x 8)` for a 1000 x 2000 photo. You can also type
-  any spacing you like.
+- Grid spacing suggestions computed from the image size. Every suggestion
+  divides both edges exactly, so there are no half cells at the border — e.g.
+  `250 px (4 x 8)` for a 1000 x 2000 photo. You can still type any spacing you
+  like; the status line then tells you the edge cells are partial.
 - Live preview with mouse-wheel zoom (anchored at the cursor) and drag to pan.
 - Saves a copy in the original format, with the save dialog opening in the
   folder the photo came from.

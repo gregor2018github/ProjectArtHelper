@@ -44,22 +44,31 @@ def desktop_dir() -> str:
     return str(home)
 
 
+ROUND_SPACINGS = (25, 50, 100, 125, 150, 200, 250, 300, 400, 500)
+
+
 def spacing_options(width: int, height: int) -> list[int]:
-    """Grid spacings that divide both dimensions evenly, plus round fallbacks."""
+    """Spacings that divide *both* dimensions exactly, so every cell is full size."""
     g = math.gcd(width, height)
     smallest = min(width, height)
     lo, hi = 10, max(10, smallest // 2)
-    options = {d for d in range(1, g + 1) if g % d == 0 and lo <= d <= hi}
-    options.update(v for v in (25, 50, 100, 125, 150, 200, 250, 300, 400, 500) if lo <= v <= hi)
-    if not options:
-        options.add(max(10, smallest // 2))
-    return sorted(options)
+    exact = sorted(d for d in range(1, g + 1) if g % d == 0 and lo <= d <= hi)
+    if exact:
+        return exact
+    # Awkward dimensions (e.g. 1001 x 2003) have no exact divisor in range;
+    # offer round values instead so the dropdown is never empty.
+    return sorted(v for v in ROUND_SPACINGS if lo <= v <= hi) or [max(10, smallest // 2)]
 
 
 def default_spacing(options: list[int], width: int, height: int) -> int:
     """Roughly a 4x4 grid on the short edge - 250 px for a 2000x1000 photo."""
     target = min(width, height) / 4
     return min(options, key=lambda v: (abs(v - target), -v))
+
+
+def cells(length: int, spacing: int) -> int:
+    """Number of cells along an edge; a trailing partial cell still counts."""
+    return max(1, -(-length // max(1, spacing)))
 
 
 def grid_positions(length: int, spacing: int) -> list[int]:
@@ -105,13 +114,39 @@ class RasterApp(tk.Tk):
         self._redraw_job = None
 
         self.options = spacing_options(self.iw, self.ih)
+        # False when the dimensions share no usable divisor, i.e. no spacing can
+        # tile this photo with whole squares.
+        self.exact_possible = any(self.iw % v == 0 and self.ih % v == 0 for v in self.options)
         self.var_thickness = tk.IntVar(value=2)
         self.var_spacing = tk.StringVar(value=str(default_spacing(self.options, self.iw, self.ih)))
         self.var_color = tk.StringVar(value="Red")
         self.var_status = tk.StringVar(value="")
+        self.var_warning = tk.StringVar(value="")
 
         self._build_ui()
+        self.protocol("WM_DELETE_WINDOW", self.close)
         self.after(60, self.fit_to_window)
+        if not self.exact_possible:
+            self.after(200, self._warn_no_exact_raster)
+
+    def close(self) -> None:
+        """Cancel any pending redraw so Tk does not fire it on a dead window."""
+        if self._redraw_job is not None:
+            self.after_cancel(self._redraw_job)
+            self._redraw_job = None
+        self.destroy()
+
+    def _warn_no_exact_raster(self) -> None:
+        messagebox.showwarning(
+            "No perfect raster possible",
+            f"{self.path.name} is {self.iw} x {self.ih} px.\n\n"
+            "These dimensions share no common divisor in a useful range, so no "
+            "line distance splits the photo into whole squares - the last row "
+            "and column will always be narrower than the rest.\n\n"
+            "The suggested values are round numbers instead. Crop the photo to "
+            "friendlier dimensions if you need an exact grid.",
+            parent=self,
+        )
 
     # ---------------------------------------------------------------- layout
 
@@ -130,12 +165,15 @@ class RasterApp(tk.Tk):
         ).pack(anchor="w", pady=(2, 12))
 
         ttk.Label(side, text="Distance between lines (px)").pack(anchor="w")
-        labels = [f"{v} px   ({self.iw // v} x {self.ih // v})" for v in self.options]
+        labels = [f"{v} px   ({cells(self.iw, v)} x {cells(self.ih, v)})" for v in self.options]
         self.spacing_box = ttk.Combobox(side, width=20, textvariable=self.var_spacing, values=labels)
         self.spacing_box.pack(anchor="w", pady=(2, 12))
         self.spacing_box.bind("<<ComboboxSelected>>", lambda _e: self._normalize_spacing())
         self.spacing_box.bind("<Return>", lambda _e: self._normalize_spacing())
         self.spacing_box.bind("<FocusOut>", lambda _e: self._normalize_spacing())
+        ttk.Label(
+            side, textvariable=self.var_warning, foreground="#b35300", wraplength=200
+        ).pack(anchor="w", pady=(0, 12))
 
         ttk.Label(side, text="Colour").pack(anchor="w")
         ttk.Combobox(
@@ -290,8 +328,24 @@ class RasterApp(tk.Tk):
                 cy = (gy - self.offset_y) * z + (width - thickness * z) / 2
                 self.canvas.create_line(left, cy, right, cy, fill=rgb, width=width)
 
-        cols, rows = self.iw // spacing + 1, self.ih // spacing + 1
-        self.var_status.set(f"Zoom {z * 100:.0f}%  -  grid {spacing} px  -  {cols} x {rows} cells")
+        self.var_status.set(
+            f"Zoom {z * 100:.0f}%  -  grid {spacing} px  -  "
+            f"{cells(self.iw, spacing)} x {cells(self.ih, spacing)} cells"
+        )
+        if self.iw % spacing == 0 and self.ih % spacing == 0:
+            self.var_warning.set("")
+        elif self.exact_possible:
+            rest_w, rest_h = self.iw % spacing, self.ih % spacing
+            self.var_warning.set(
+                f"Warning: {spacing} px does not divide this photo evenly - the "
+                f"edge cells are {rest_w or spacing} x {rest_h or spacing} px. "
+                "Pick a value from the list for whole squares."
+            )
+        else:
+            self.var_warning.set(
+                f"Warning: no line distance divides {self.iw} x {self.ih} px into "
+                "whole squares - the edge cells will always be partial."
+            )
 
     # ------------------------------------------------------------------ save
 

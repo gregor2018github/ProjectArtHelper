@@ -41,9 +41,11 @@ Or double-click [run.bat](run.bat).
   pixel thickness; `line` width rounding is unreliable.
 - **Only interior lines are drawn** (`grid_positions` starts at `spacing`, not
   0) — the image border is already an edge.
-- **Spacing choices come from `gcd(width, height)`** so the grid divides the
-  image evenly, plus round fallbacks (25/50/100/…). The combobox is editable,
-  so any integer is still allowed; `RasterApp.spacing` parses and clamps it.
+- **Spacing choices are the divisors of `gcd(width, height)`**, so every
+  suggestion tiles the image with no partial cells. Round fallbacks
+  (`ROUND_SPACINGS`) are used *only* when the dimensions are coprime and the
+  exact set would be empty. The combobox stays editable, so any integer is
+  allowed; the status line then warns about partial edge cells.
 - **Zoom is anchored at the cursor**; the view is stored as an image-space
   offset plus a zoom factor, and only the visible crop is resized per frame, so
   large photos stay responsive. Redraws are debounced through `request_redraw`.
