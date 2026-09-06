@@ -3,3 +3,6 @@ __pycache__/
 *.png
 *.jpg
 *.jpeg
+
+# ...but the README example is part of the repo
+!examples/*.png

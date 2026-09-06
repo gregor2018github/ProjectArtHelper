@@ -21,6 +21,10 @@ no config files.
     preview canvas on the right.
 - [requirements.txt](requirements.txt) — Pillow only; tkinter ships with Python.
 - `.venv/` — local virtual environment (git-ignored).
+- `examples/screenshot.png` — the README screenshot. `.gitignore` excludes
+  `*.png` but re-includes `examples/*.png`; regenerate it by driving
+  `RasterApp` and grabbing `winfo_rootx/rooty/width/height` with
+  `PIL.ImageGrab`.
 
 ## Running
 

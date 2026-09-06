@@ -4,6 +4,10 @@ A small desktop tool that draws a reference grid onto a photo, so you can
 sketch difficult subjects square by square instead of building the grid by hand
 in an image editor.
 
+![The app showing a 125 px red raster over a drawing](examples/screenshot.png)
+
+*A 125 px raster (8 x 16 cells) over a 1000 x 2000 px drawing, 4 px lines.*
+
 ## Features
 
 - Pick any `.png` / `.jpg` / `.jpeg` / `.bmp` / `.tif` / `.webp`; the file
