@@ -202,6 +202,7 @@ class RasterApp(tk.Tk):
         self.canvas.bind("<Configure>", lambda _e: self.request_redraw())
         self.canvas.bind("<ButtonPress-1>", self.on_press)
         self.canvas.bind("<B1-Motion>", self.on_drag)
+        self.canvas.bind("<ButtonRelease-1>", self.on_release)
         self.canvas.bind("<MouseWheel>", self.on_wheel)
         self.canvas.bind("<Button-4>", lambda e: self.on_wheel(e, delta=120))
         self.canvas.bind("<Button-5>", lambda e: self.on_wheel(e, delta=-120))
@@ -265,6 +266,7 @@ class RasterApp(tk.Tk):
 
     def on_press(self, event) -> None:
         self._drag = (event.x, event.y, self.offset_x, self.offset_y)
+        self.canvas.config(cursor="fleur")
 
     def on_drag(self, event) -> None:
         if not self._drag:
@@ -274,6 +276,11 @@ class RasterApp(tk.Tk):
         self.offset_y = oy - (event.y - sy) / self.zoom
         self.request_redraw()
 
+    def on_release(self, _event) -> None:
+        self._drag = None
+        self.canvas.config(cursor="")
+        self.request_redraw()  # redo the last frame at full resample quality
+
     def on_wheel(self, event, delta: int | None = None) -> None:
         step = delta if delta is not None else event.delta
         self.set_zoom(self.zoom * (1.15 if step > 0 else 1 / 1.15), anchor=(event.x, event.y))
@@ -281,9 +288,14 @@ class RasterApp(tk.Tk):
     # --------------------------------------------------------------- drawing
 
     def request_redraw(self) -> None:
-        if self._redraw_job is not None:
-            self.after_cancel(self._redraw_job)
-        self._redraw_job = self.after(16, self.redraw)
+        """Coalesce redraws to ~60 fps.
+
+        A pending job is deliberately left to fire rather than rescheduled:
+        cancelling it on every event starves the redraw during a continuous
+        drag, so the view would only catch up once the mouse stopped moving.
+        """
+        if self._redraw_job is None:
+            self._redraw_job = self.after(16, self.redraw)
 
     def redraw(self) -> None:
         self._redraw_job = None
@@ -301,9 +313,14 @@ class RasterApp(tk.Tk):
 
         tw = max(1, int(round((x1 - x0) * z)))
         th = max(1, int(round((y1 - y0) * z)))
-        key = (x0, y0, x1, y1, tw, th)
+        # Downscaling with LANCZOS costs real time on a large photo, so use the
+        # cheap filter while a drag is in flight; on_release redraws sharply.
+        if z >= 1:
+            resample = Image.NEAREST
+        else:
+            resample = Image.BILINEAR if self._drag else Image.LANCZOS
+        key = (x0, y0, x1, y1, tw, th, resample)
         if key != self._cache_key:
-            resample = Image.NEAREST if z >= 1 else Image.LANCZOS
             crop = self.image.crop((x0, y0, x1, y1)).resize((tw, th), resample)
             self._photo = ImageTk.PhotoImage(crop.convert("RGB"))
             self._cache_key = key

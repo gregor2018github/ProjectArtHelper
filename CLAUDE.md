@@ -48,7 +48,11 @@ Or double-click [run.bat](run.bat).
   allowed; the status line then warns about partial edge cells.
 - **Zoom is anchored at the cursor**; the view is stored as an image-space
   offset plus a zoom factor, and only the visible crop is resized per frame, so
-  large photos stay responsive. Redraws are debounced through `request_redraw`.
+  large photos stay responsive. `request_redraw` **throttles** (leaves a
+  pending job to fire) rather than debouncing — cancelling on every event
+  starves the redraw during a continuous drag, so panning would only update
+  on mouse release. Downscaling uses BILINEAR while `_drag` is set and
+  LANCZOS once released; the resample filter is part of the cache key.
 
 ## Testing
 
