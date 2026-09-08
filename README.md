@@ -17,6 +17,10 @@ in an image editor.
   divides both edges exactly, so there are no half cells at the border — e.g.
   `250 px (4 x 8)` for a 1000 x 2000 photo. You can still type any spacing you
   like; the status line then tells you the edge cells are partial.
+- **Refine cell**: tick the box, pick 2x / 4x / 8x, then click a cell to split
+  it further — useful for hands and faces. Clicking the same cell with the same
+  factor removes it again, and **Reset refinements** clears all of them.
+  Dragging still pans, so only a click without movement picks a cell.
 - Live preview with mouse-wheel zoom (anchored at the cursor) and drag to pan.
 - Saves a copy in the original format, with the save dialog opening in the
   folder the photo came from.
@@ -46,7 +50,9 @@ On Windows you can also double-click `run.bat`.
    you type.
 3. Zoom with the mouse wheel or the `-` / `+` / `Fit` / `100%` buttons; drag to
    pan.
-4. **Save as…** writes a new file, defaulting to `<name>_raster.<same ext>` next
+4. For critical areas, tick **Refine cell**, choose a factor, and click the
+   cells you want subdivided.
+5. **Save as…** writes a new file, defaulting to `<name>_raster.<same ext>` next
    to the original.
 
 The preview keeps thin lines at least one screen pixel wide so they remain

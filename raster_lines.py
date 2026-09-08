@@ -78,8 +78,45 @@ def grid_positions(length: int, spacing: int) -> list[int]:
     return list(range(spacing, length, spacing))
 
 
+SUBDIVISION_FACTORS = (2, 4, 8)
+
+
+def cell_at(x: float, y: float, spacing: int, width: int, height: int) -> tuple[int, int] | None:
+    """Grid cell (column, row) holding image point (x, y), or None if outside."""
+    if spacing < 1 or not (0 <= x < width and 0 <= y < height):
+        return None
+    return int(x // spacing), int(y // spacing)
+
+
+def cell_bounds(
+    col: int, row: int, spacing: int, width: int, height: int
+) -> tuple[int, int, int, int]:
+    """Pixel box (x0, y0, x1, y1) of a cell; edge cells are clipped to the image."""
+    x0, y0 = col * spacing, row * spacing
+    return x0, y0, min(x0 + spacing, width), min(y0 + spacing, height)
+
+
+def subdivision_lines(
+    col: int, row: int, spacing: int, factor: int, width: int, height: int
+) -> tuple[list[int], list[int]]:
+    """Interior line coordinates that split one cell into *factor* x *factor*.
+
+    Positions are rounded, so a spacing that is not a multiple of the factor
+    still gets evenly spread lines. A partial edge cell simply drops the lines
+    that fall outside it.
+    """
+    x0, y0, x1, y1 = cell_bounds(col, row, spacing, width, height)
+    xs = [x0 + round(i * spacing / factor) for i in range(1, factor)]
+    ys = [y0 + round(i * spacing / factor) for i in range(1, factor)]
+    return [x for x in xs if x0 < x < x1], [y for y in ys if y0 < y < y1]
+
+
 def draw_grid(
-    image: Image.Image, spacing: int, thickness: int, color: tuple[int, int, int]
+    image: Image.Image,
+    spacing: int,
+    thickness: int,
+    color: tuple[int, int, int],
+    subdivisions: dict[tuple[int, int], int] | None = None,
 ) -> Image.Image:
     """Return a copy of *image* with the raster baked in at full resolution."""
     out = image.copy()
@@ -91,6 +128,13 @@ def draw_grid(
         draw.rectangle([x - half, 0, x - half + thickness - 1, h - 1], fill=fill)
     for y in grid_positions(h, spacing):
         draw.rectangle([0, y - half, w - 1, y - half + thickness - 1], fill=fill)
+    for (col, row), factor in (subdivisions or {}).items():
+        x0, y0, x1, y1 = cell_bounds(col, row, spacing, w, h)
+        xs, ys = subdivision_lines(col, row, spacing, factor, w, h)
+        for x in xs:
+            draw.rectangle([x - half, y0, x - half + thickness - 1, y1 - 1], fill=fill)
+        for y in ys:
+            draw.rectangle([x0, y - half, x1 - 1, y - half + thickness - 1], fill=fill)
     return out
 
 
@@ -111,6 +155,7 @@ class RasterApp(tk.Tk):
         self._photo: ImageTk.PhotoImage | None = None
         self._cache_key = None
         self._drag = None
+        self._press = (0, 0)
         self._redraw_job = None
 
         self.options = spacing_options(self.iw, self.ih)
@@ -122,6 +167,13 @@ class RasterApp(tk.Tk):
         self.var_color = tk.StringVar(value="Red")
         self.var_status = tk.StringVar(value="")
         self.var_warning = tk.StringVar(value="")
+        self.var_subdivide = tk.BooleanVar(value=False)
+        self.var_factor = tk.StringVar(value="4x")
+        # Cells refined for critical areas (hands, faces): (col, row) -> factor.
+        # Cell indices only mean something for one spacing, so a spacing change
+        # drops them (see redraw).
+        self.subdivisions: dict[tuple[int, int], int] = {}
+        self._sub_spacing = None
 
         self._build_ui()
         self.protocol("WM_DELETE_WINDOW", self.close)
@@ -174,6 +226,24 @@ class RasterApp(tk.Tk):
         ttk.Label(
             side, textvariable=self.var_warning, foreground="#b35300", wraplength=200
         ).pack(anchor="w", pady=(0, 12))
+
+        sub_row = ttk.Frame(side)
+        sub_row.pack(anchor="w", fill="x")
+        ttk.Checkbutton(
+            sub_row, text="Refine cell", variable=self.var_subdivide,
+            command=self._on_subdivide_toggle,
+        ).pack(side="left")
+        ttk.Combobox(
+            sub_row, width=4, textvariable=self.var_factor, state="readonly",
+            values=[f"{f}x" for f in SUBDIVISION_FACTORS],
+        ).pack(side="left", padx=(6, 0))
+        ttk.Label(
+            side, text="Click a cell to split it; click it again to undo.",
+            foreground="#777", wraplength=200,
+        ).pack(anchor="w", pady=(2, 4))
+        ttk.Button(side, text="Reset refinements", command=self.reset_subdivisions).pack(
+            anchor="w", pady=(0, 12)
+        )
 
         ttk.Label(side, text="Colour").pack(anchor="w")
         ttk.Combobox(
@@ -233,6 +303,35 @@ class RasterApp(tk.Tk):
     def color(self) -> tuple[int, int, int]:
         return COLORS.get(self.var_color.get(), (255, 0, 0))
 
+    @property
+    def factor(self) -> int:
+        try:
+            return int(self.var_factor.get().rstrip("xX"))
+        except ValueError:
+            return 4
+
+    def _on_subdivide_toggle(self) -> None:
+        self.canvas.config(cursor="crosshair" if self.var_subdivide.get() else "")
+
+    def reset_subdivisions(self) -> None:
+        self.subdivisions.clear()
+        self.request_redraw()
+
+    def toggle_cell(self, cx: int, cy: int) -> None:
+        """Refine (or un-refine) the cell under a canvas point."""
+        img_x = self.offset_x + cx / self.zoom
+        img_y = self.offset_y + cy / self.zoom
+        cell = cell_at(img_x, img_y, self.spacing, self.iw, self.ih)
+        if cell is None:
+            return
+        factor = self.factor
+        if self.subdivisions.get(cell) == factor:
+            del self.subdivisions[cell]
+        else:
+            self.subdivisions[cell] = factor
+        self._sub_spacing = self.spacing
+        self.request_redraw()
+
     # ------------------------------------------------------------------ view
 
     def canvas_size(self) -> tuple[int, int]:
@@ -266,6 +365,7 @@ class RasterApp(tk.Tk):
 
     def on_press(self, event) -> None:
         self._drag = (event.x, event.y, self.offset_x, self.offset_y)
+        self._press = (event.x, event.y)
         self.canvas.config(cursor="fleur")
 
     def on_drag(self, event) -> None:
@@ -276,9 +376,13 @@ class RasterApp(tk.Tk):
         self.offset_y = oy - (event.y - sy) / self.zoom
         self.request_redraw()
 
-    def on_release(self, _event) -> None:
+    def on_release(self, event) -> None:
         self._drag = None
-        self.canvas.config(cursor="")
+        self.canvas.config(cursor="crosshair" if self.var_subdivide.get() else "")
+        # A click that did not pan is a cell pick; anything further is a drag.
+        px, py = self._press
+        if self.var_subdivide.get() and abs(event.x - px) < 3 and abs(event.y - py) < 3:
+            self.toggle_cell(event.x, event.y)
         self.request_redraw()  # redo the last frame at full resample quality
 
     def on_wheel(self, event, delta: int | None = None) -> None:
@@ -345,9 +449,28 @@ class RasterApp(tk.Tk):
                 cy = (gy - self.offset_y) * z + (width - thickness * z) / 2
                 self.canvas.create_line(left, cy, right, cy, fill=rgb, width=width)
 
+        if self.subdivisions and self._sub_spacing != spacing:
+            self.subdivisions.clear()  # cell indices are tied to one spacing
+        for (col, row), factor in self.subdivisions.items():
+            cx0, cy0, cx1, cy1 = cell_bounds(col, row, spacing, self.iw, self.ih)
+            if cx1 < x0 or cx0 > x1 or cy1 < y0 or cy0 > y1:
+                continue
+            sxs, sys_ = subdivision_lines(col, row, spacing, factor, self.iw, self.ih)
+            cell_top = (cy0 - self.offset_y) * z
+            cell_bottom = (cy1 - self.offset_y) * z
+            cell_left = (cx0 - self.offset_x) * z
+            cell_right = (cx1 - self.offset_x) * z
+            for sx in sxs:
+                cx = (sx - self.offset_x) * z + (width - thickness * z) / 2
+                self.canvas.create_line(cx, cell_top, cx, cell_bottom, fill=rgb, width=width)
+            for sy in sys_:
+                cy = (sy - self.offset_y) * z + (width - thickness * z) / 2
+                self.canvas.create_line(cell_left, cy, cell_right, cy, fill=rgb, width=width)
+
+        refined = f"  -  {len(self.subdivisions)} refined" if self.subdivisions else ""
         self.var_status.set(
             f"Zoom {z * 100:.0f}%  -  grid {spacing} px  -  "
-            f"{cells(self.iw, spacing)} x {cells(self.ih, spacing)} cells"
+            f"{cells(self.iw, spacing)} x {cells(self.ih, spacing)} cells{refined}"
         )
         if self.iw % spacing == 0 and self.ih % spacing == 0:
             self.var_warning.set("")
@@ -379,7 +502,9 @@ class RasterApp(tk.Tk):
         if not target:
             return
         try:
-            result = draw_grid(self.image, self.spacing, self.thickness, self.color)
+            result = draw_grid(
+                self.image, self.spacing, self.thickness, self.color, self.subdivisions
+            )
             out_ext = Path(target).suffix.lower()
             if out_ext in (".jpg", ".jpeg"):
                 result.convert("RGB").save(target, quality=95, subsampling=0)

@@ -50,6 +50,14 @@ Or double-click [run.bat](run.bat).
   (`ROUND_SPACINGS`) are used *only* when the dimensions are coprime and the
   exact set would be empty. The combobox stays editable, so any integer is
   allowed; the status line then warns about partial edge cells.
+- **Per-cell refinement** (`subdivisions`: `(col, row) -> factor`) splits single
+  cells further for hands and faces. Line positions are *rounded* fractions of
+  the spacing, so a spacing not divisible by the factor still works, and lines
+  falling outside a partial edge cell are dropped. Because cell indices only
+  mean something for one spacing, `redraw` clears the dict when the spacing
+  changes. Picking a cell reuses button 1: `on_release` treats a release within
+  3 px of the press as a click and anything further as a pan, so dragging is
+  unaffected.
 - **Zoom is anchored at the cursor**; the view is stored as an image-space
   offset plus a zoom factor, and only the visible crop is resized per frame, so
   large photos stay responsive. `request_redraw` **throttles** (leaves a
