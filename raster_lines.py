@@ -264,7 +264,7 @@ class CanvasView(ttk.Frame):
     """Sidebar + canvas with the zoom / pan plumbing both modes share.
 
     The view is stored as an image-space offset plus a zoom factor; subclasses
-    supply `content_size` (the world they live in) and `draw`.
+    supply `content_size` (the world they live in) and `render`.
     """
 
     fit_padding = 0.98
@@ -281,6 +281,8 @@ class CanvasView(ttk.Frame):
         self._drag = None
         self._press = (0, 0)
         self._redraw_job = None
+        self._pending_fit = False
+        self._fit_size: tuple[int, int] | None = None
 
     # ---------------------------------------------------------------- widgets
 
@@ -315,22 +317,42 @@ class CanvasView(ttk.Frame):
     def to_canvas(self, x: float, y: float) -> tuple[float, float]:
         return (x - self.offset_x) * self.zoom, (y - self.offset_y) * self.zoom
 
+    def fit_bounds(self) -> tuple[float, float, float, float]:
+        """The box a fit should bring into view; the content itself by default."""
+        w, h = self.content_size()
+        return 0.0, 0.0, float(w), float(h)
+
     def fit_to_window(self) -> None:
-        """Zoom so the content fills the canvas, and centre it.
+        """Zoom so the fit box fills the canvas, and centre the view on it.
 
         Centring has to be explicit: compose mode lets the view roam well
         outside its frame, so the clamp alone would leave it wherever it was.
         """
         cw, ch = self.canvas_size()
-        w, h = self.content_size()
+        x0, y0, x1, y1 = self.fit_bounds()
+        w, h = x1 - x0, y1 - y0
         if w < 1 or h < 1:
             return
         self.zoom = max(MIN_ZOOM, min(min(cw / w, ch / h) * self.fit_padding, MAX_ZOOM))
-        self.offset_x = (w - cw / self.zoom) / 2
-        self.offset_y = (h - ch / self.zoom) / 2
+        self.offset_x = (x0 + x1) / 2 - cw / (2 * self.zoom)
+        self.offset_y = (y0 + y1) / 2 - ch / (2 * self.zoom)
+        self.request_redraw()
+
+    def request_fit(self) -> None:
+        """Fit once the canvas has a real, settled size.
+
+        The mode that is not on screen has an unmapped 1x1 canvas, so fitting
+        right away would compute a meaningless zoom that survives until the
+        user presses Fit. Even the first sized draw can come in before the
+        layout has settled, so the request stands until two draws agree on the
+        canvas size (see `draw`) or the user moves the view themselves.
+        """
+        self._pending_fit = True
+        self._fit_size = None
         self.request_redraw()
 
     def set_zoom(self, zoom: float, anchor: tuple[float, float] | None = None) -> None:
+        self._pending_fit = False
         cw, ch = self.canvas_size()
         new = max(MIN_ZOOM, min(zoom, MAX_ZOOM))
         if anchor is None:
@@ -346,17 +368,23 @@ class CanvasView(ttk.Frame):
         self.set_zoom(self.zoom * factor)
 
     @staticmethod
-    def _clamp_axis(offset: float, view: float, size: float, margin: float) -> float:
-        lo, hi = -margin, size + margin - view
-        if hi < lo:  # the whole content fits on screen: centre it
-            return (size - view) / 2
+    def _clamp_axis(offset: float, view: float, start: float, size: float, margin: float) -> float:
+        lo, hi = start - margin, start + size + margin - view
+        if hi < lo:  # the whole box fits on screen: centre it
+            return start + (size - view) / 2
         return min(max(offset, lo), hi)
 
     def clamp_offsets(self) -> None:
+        """Keep the fit box on screen, give or take `clamp_margin` of its size."""
         cw, ch = self.canvas_size()
-        w, h = self.content_size()
-        self.offset_x = self._clamp_axis(self.offset_x, cw / self.zoom, w, w * self.clamp_margin)
-        self.offset_y = self._clamp_axis(self.offset_y, ch / self.zoom, h, h * self.clamp_margin)
+        x0, y0, x1, y1 = self.fit_bounds()
+        w, h = x1 - x0, y1 - y0
+        self.offset_x = self._clamp_axis(
+            self.offset_x, cw / self.zoom, x0, w, w * self.clamp_margin
+        )
+        self.offset_y = self._clamp_axis(
+            self.offset_y, ch / self.zoom, y0, h, h * self.clamp_margin
+        )
 
     # -------------------------------------------------- events (overridable)
 
@@ -369,6 +397,7 @@ class CanvasView(ttk.Frame):
     def on_drag(self, event) -> None:
         if not self._drag:
             return
+        self._pending_fit = False
         sx, sy, ox, oy = self._drag
         self.offset_x = ox - (event.x - sx) / self.zoom
         self.offset_y = oy - (event.y - sy) / self.zoom
@@ -401,6 +430,17 @@ class CanvasView(ttk.Frame):
             self._redraw_job = None
 
     def draw(self) -> None:
+        self._redraw_job = None
+        size = self.canvas_size()
+        if self._pending_fit and size > (1, 1):
+            if self._fit_size == size:
+                self._pending_fit = False  # the canvas settled; the fit stands
+            else:
+                self._fit_size = size  # it may still be growing: fit again later
+                self.fit_to_window()
+        self.render()
+
+    def render(self) -> None:
         raise NotImplementedError
 
     def placeholder(self, text: str) -> None:
@@ -524,7 +564,7 @@ class GridMode(CanvasView):
         self.var_spacing.set(str(default_spacing(self.options, self.iw, self.ih)))
         self.subdivisions.clear()
         self._cache_key = None
-        self.after(60, self.fit_to_window)
+        self.request_fit()
         if not self.exact_possible:
             self.after(200, self._warn_no_exact_raster)
 
@@ -610,8 +650,7 @@ class GridMode(CanvasView):
 
     # --------------------------------------------------------------- drawing
 
-    def draw(self) -> None:
-        self._redraw_job = None
+    def render(self) -> None:
         if self.image is None:
             self.placeholder("Open a photo to start")
             return
@@ -836,6 +875,19 @@ class ComposeMode(CanvasView):
     def content_size(self) -> tuple[int, int]:
         return self.frame_size
 
+    def fit_bounds(self) -> tuple[float, float, float, float]:
+        """The frame, widened to hold any photo hanging over its edges.
+
+        Fitting the frame alone would push a photo larger than the frame half
+        off screen, which is exactly the moment you need to see all of it.
+        """
+        fw, fh = self.frame_size
+        x0, y0, x1, y1 = 0.0, 0.0, float(fw), float(fh)
+        for item in self.items:
+            bx0, by0, bx1, by1 = item.box
+            x0, y0, x1, y1 = min(x0, bx0), min(y0, by0), max(x1, bx1), max(y1, by1)
+        return x0, y0, x1, y1
+
     # ------------------------------------------------------ frame and photo
 
     def apply_frame_size(self) -> None:
@@ -861,8 +913,7 @@ class ComposeMode(CanvasView):
         self.items = [item]  # one photo for now; the list keeps room for more
         self.active = item
         self.var_info.set(f"{path.name}\n{image.width} x {image.height} px")
-        self.after(60, self.fit_to_window)
-        self.request_redraw()
+        self.request_fit()
 
     def fit_item(self, cover: bool) -> None:
         item = self.active
@@ -1019,8 +1070,7 @@ class ComposeMode(CanvasView):
         base.paste(faded, (0, 0), ImageChops.subtract(drawn, frame_mask))
         return base
 
-    def draw(self) -> None:
-        self._redraw_job = None
+    def render(self) -> None:
         self.clamp_offsets()
         cw, ch = self.canvas_size()
         self.canvas.delete("all")
