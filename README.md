@@ -44,7 +44,10 @@ the buttons in the top left:
   - `+` / `-` resize it around its own centre,
   - dragging moves it, and the arrow keys nudge it a screen pixel at a time
     (ten with Shift),
-  - `Delete` removes it.
+  - `Delete` removes it — from anywhere in the window, not just over the
+    canvas, though not while you are typing in the frame-size box.
+- **Right-click** a photo or an outline to select it and get a **Delete** entry
+  for it.
 - Clicking the backdrop deactivates it too. With nothing active the wheel zooms
   the view instead, as does `Ctrl`+wheel — except over an active shape, where
   `Ctrl`+wheel sets the outline thickness.

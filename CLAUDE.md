@@ -131,6 +131,12 @@ Or double-click [run.bat](run.bat).
   request is honoured in `draw` once the canvas has a size, and repeated until
   two draws agree on it, because the first sized draw can still arrive
   mid-layout. `set_zoom` and panning cancel a pending fit.
+- **Delete is bound on the toplevel, not just the canvas.** Bound to the
+  canvas alone it did nothing once a sidebar control had the focus. The
+  handler bails out when the mode is not on screen, or when an `Entry` /
+  `Spinbox` (which includes the comboboxes) has the focus, where the key
+  means "delete a character". Right-click offers the same action on whatever
+  is under the cursor, selecting it first.
 - **Dialogs start in `script_dir()`**, not the desktop or the last folder used:
   the photos live next to the script.
 - **Zoom is anchored at the cursor**; the view is stored as an image-space

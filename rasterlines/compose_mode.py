@@ -111,8 +111,9 @@ class ComposeMode(CanvasView):
         ttk.Label(
             side,
             text="Left-click a photo or shape to activate it, then wheel or +/- to "
-                 "resize and drag to move; arrow keys nudge, Delete removes. Click "
-                 "it again, or the backdrop, to deselect.",
+                 "resize and drag to move; arrow keys nudge. Delete removes what is "
+                 "active, and a right-click offers the same. Click it again, or the "
+                 "backdrop, to deselect.",
             foreground="#777", wraplength=200,
         ).pack(anchor="w", pady=(0, 12))
 
@@ -187,6 +188,11 @@ class ComposeMode(CanvasView):
         for seq in ("<minus>", "<KP_Subtract>"):
             canvas.bind(seq, lambda _e: self.scale_item(1 / 1.1))
         canvas.bind("<Delete>", lambda _e: self.remove_item())
+        canvas.bind("<Button-3>", self.on_right_click)
+        # Delete has to work even when a sidebar control holds the focus, so it
+        # is bound on the window too - but not while a text field has it, where
+        # the key means "delete a character".
+        self.winfo_toplevel().bind("<Delete>", self._on_delete_key, add="+")
         canvas.bind("<Left>", lambda e: self.nudge(-1, 0, e))
         canvas.bind("<Right>", lambda e: self.nudge(1, 0, e))
         canvas.bind("<Up>", lambda e: self.nudge(0, -1, e))
@@ -246,6 +252,7 @@ class ComposeMode(CanvasView):
         shape.center_in(*self.frame_size)
         self.items.append(shape)
         self.active = shape
+        self.canvas.focus_set()  # so Delete and the arrows work straight away
         self.request_redraw()
 
     @property
@@ -331,6 +338,29 @@ class ComposeMode(CanvasView):
         item.x += dx * step
         item.y += dy * step
         self.request_redraw()
+
+    def _on_delete_key(self, _event=None) -> None:
+        if not self.winfo_ismapped():
+            return  # the other mode is on screen
+        focused = self.focus_get()
+        if isinstance(focused, (ttk.Entry, ttk.Spinbox, tk.Entry, tk.Spinbox)):
+            return  # a combobox or spinbox is being edited; leave the text alone
+        self.remove_item()
+
+    def on_right_click(self, event) -> None:
+        """Select whatever was right-clicked and offer to delete it."""
+        hit = self.item_at(event.x, event.y)
+        if hit is None:
+            return
+        self.active = hit
+        self.request_redraw()
+        menu = tk.Menu(self, tearoff=0)
+        menu.add_command(label=f"Delete {hit.name}", command=self.remove_item)
+        self._menu = menu  # keep it alive until it is dismissed
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
 
     def item_at(self, cx: float, cy: float) -> Item | None:
         """Topmost item under a canvas point, shapes before the photo they sit on."""
