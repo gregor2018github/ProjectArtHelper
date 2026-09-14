@@ -16,7 +16,7 @@ the buttons in the top left:
 ## Grid mode
 
 - Pick any `.png` / `.jpg` / `.jpeg` / `.bmp` / `.tif` / `.webp`; the file
-  dialog opens on your Desktop.
+  dialog opens in the folder the script sits in, where the photos live.
 - Adjustable line thickness (default 2 px) and colour (default red).
 - Grid spacing suggestions computed from the image size. Every suggestion
   divides both edges exactly, so there are no half cells at the border — e.g.
@@ -35,19 +35,21 @@ the buttons in the top left:
 - Choose the final frame size from the presets — 2000 x 2000, 4000 x 2000,
   2000 x 4000, 4000 x 3000, 3000 x 4000 — or type your own, e.g. `3500 x 2400`
   (`3500:2400` and `3500x2400` work too).
-- The photo you opened is dropped into the frame, scaled to fit and centred.
-- **Left-click the photo to activate it.** While it is active:
+- The photo you opened is dropped into the frame, scaled to fit and centred,
+  with the view zoomed so the frame and the photo both fill the window.
+- **Left-click the photo to activate it**, and click it again to deactivate.
+  While it is active:
   - the mouse wheel resizes it, anchored at the cursor,
   - `+` / `-` resize it around its own centre,
   - dragging moves it, and the arrow keys nudge it a screen pixel at a time
     (ten with Shift),
   - `Delete` removes it.
-- Click the backdrop to deactivate. With nothing active the wheel zooms the
-  view instead; `Ctrl`+wheel always zooms the view, active photo or not.
+- Clicking the backdrop deactivates it too. With nothing active the wheel zooms
+  the view instead; `Ctrl`+wheel always zooms the view, active photo or not.
 - **Fit in** / **Fill** / **Centre** place the photo against the frame in one
   click.
-- Whatever hangs over the frame edge is drawn grey and washed out, so the part
-  that actually makes it into the picture stays obvious.
+- Whatever hangs over the frame edge is drawn as a faint grey ghost, so the
+  part that actually makes it into the picture stays obvious.
 - **Save frame as…** writes exactly the frame — frame-sized, everything outside
   it cropped away, white behind anything the photo does not cover.
 

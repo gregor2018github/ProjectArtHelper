@@ -24,7 +24,8 @@ no config files.
     `render_composition` for the composition.
   - `CanvasView(ttk.Frame)` is the shared sidebar + canvas: zoom, pan, the
     throttled redraw, and the coordinate helpers. Subclasses supply
-    `content_size()` (the world they live in) and `draw()`.
+    `content_size()` (the world they live in) and `render()` — `draw()` itself
+    belongs to the base, which uses it to honour a pending fit first.
   - `GridMode` and `ComposeMode` subclass it, one per mode.
   - `RasterApp(tk.Tk)` is the shell: the mode switch across the top, both mode
     frames built up front and `pack`/`pack_forget`-ed as the mode changes, and
@@ -74,18 +75,29 @@ Or double-click [run.bat](run.bat).
 - **The spill outside the frame is faded in the preview only.** The visible
   part of each photo is resized once per frame, pasted into a full-canvas
   layer, and split by a frame mask: inside goes down untouched, outside goes
-  down desaturated and blended halfway to a mid grey (`MUTE_RGB`). Blending
-  towards the dark backdrop instead buries dark photos entirely. Saving uses
-  `render_composition()`, which simply crops at the frame edge.
+  down desaturated and washed most of the way to a mid grey (`MUTE_RGB`).
+  Blending towards the dark backdrop instead buries dark photos entirely.
+  Saving uses `render_composition()`, which simply crops at the frame edge.
 - **Button 1 in compose mode means "grab what is under it"**: a press on a
   photo selects and moves it, a press on the backdrop pans the view, and a
-  release within 3 px of a press on the backdrop clears the selection. The
-  wheel scales the active photo (anchored at the cursor) and falls back to view
-  zoom with Ctrl, or when nothing is active.
+  release within 3 px of the press counts as a click — on the backdrop, or on
+  the already-active photo, that clears the selection. Dragging the active
+  photo has to keep moving it, hence the `_toggle_off` flag set at press time
+  and acted on only at release. The wheel scales the active photo (anchored at
+  the cursor) and falls back to view zoom with Ctrl, or when nothing is active.
 - **`fit_to_window` centres the view explicitly.** Grid mode's clamp pins the
   photo to the canvas, but compose mode deliberately allows panning far outside
   its frame (`clamp_margin`), so a zoom-only fit would leave the frame
-  off-centre.
+  off-centre. It works on `fit_bounds()`, which compose widens to the frame
+  *plus* any photo hanging over its edges; the pan clamp uses the same box.
+- **Fitting on load goes through `request_fit`, never a direct call.** The mode
+  that is not on screen has an unmapped 1x1 canvas, so fitting immediately
+  produces a meaningless zoom that survives until the user presses Fit. The
+  request is honoured in `draw` once the canvas has a size, and repeated until
+  two draws agree on it, because the first sized draw can still arrive
+  mid-layout. `set_zoom` and panning cancel a pending fit.
+- **Dialogs start in `script_dir()`**, not the desktop or the last folder used:
+  the photos live next to the script.
 - **Zoom is anchored at the cursor**; the view is stored as an image-space
   offset plus a zoom factor, and only the visible crop is resized per frame, so
   large photos stay responsive. `request_redraw` **throttles** (leaves a
