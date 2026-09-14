@@ -1,4 +1,4 @@
-# Raster Lines
+# Art Helper
 
 A small desktop tool for preparing a drawing. It has two modes, switched with
 the buttons in the top left:
@@ -97,7 +97,7 @@ python -m venv .venv
 ## Usage
 
 ```powershell
-.venv\Scripts\python.exe raster_lines.py
+.venv\Scripts\python.exe art_helper.py
 ```
 
 On Windows you can also double-click `run.bat`.
@@ -122,8 +122,8 @@ chose at full resolution.
 
 ## Layout
 
-The launcher is `raster_lines.py`; the program itself lives in the
-`rasterlines/` package — `grid.py` and `compose.py` hold the maths with no
+The launcher is `art_helper.py`; the program itself lives in the
+`arthelper/` package — `grid.py` and `compose.py` hold the maths with no
 tkinter in sight, `view.py` the shared canvas, and `grid_mode.py` /
 `compose_mode.py` / `app.py` the interface.
 

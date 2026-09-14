@@ -26,13 +26,13 @@ from .grid import (
 from .view import CanvasView
 
 if TYPE_CHECKING:
-    from .app import RasterApp
+    from .app import ArtHelperApp
 
 
 class GridMode(CanvasView):
     """Overlay a raster on a photo and save it baked in at full resolution."""
 
-    def __init__(self, app: RasterApp) -> None:
+    def __init__(self, app: ArtHelperApp) -> None:
         super().__init__(app)
         self.image: Image.Image | None = None
         self.path: Path | None = None

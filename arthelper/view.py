@@ -11,7 +11,7 @@ from PIL import ImageTk
 from .common import BG, MAX_ZOOM, MIN_ZOOM
 
 if TYPE_CHECKING:
-    from .app import RasterApp
+    from .app import ArtHelperApp
 
 
 class CanvasView(ttk.Frame):
@@ -24,7 +24,7 @@ class CanvasView(ttk.Frame):
     fit_padding = 0.98
     clamp_margin = 0.0  # how far outside the content panning may go, as a fraction
 
-    def __init__(self, app: RasterApp) -> None:
+    def __init__(self, app: ArtHelperApp) -> None:
         super().__init__(app.body)
         self.app = app
         self.zoom = 1.0

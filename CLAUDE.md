@@ -4,7 +4,9 @@ Guidance for Claude Code when working in this repository.
 
 ## What this is
 
-A small desktop tool for preparing drawings, with two modes in one window:
+Art Helper: a small desktop tool for preparing drawings, with two modes in one
+window. (It began as "Raster Lines" when grid mode was all there was, hence the
+old name in commits before the rename.)
 
 - **Grid mode** — load a photo, overlay a regular grid ("raster") of coloured
   lines, save a copy with the grid baked in. Replaces doing the same job by
@@ -18,27 +20,27 @@ no config files.
 
 ## Layout
 
-- [raster_lines.py](raster_lines.py) — launcher, nothing else. Keeps
-  `python raster_lines.py` and [run.bat](run.bat) working.
-- [rasterlines/](rasterlines/) — the program, split so the maths can be
+- [art_helper.py](art_helper.py) — launcher, nothing else. Keeps
+  `python art_helper.py` and [run.bat](run.bat) working.
+- [arthelper/](arthelper/) — the program, split so the maths can be
   imported without a display:
-  - [common.py](rasterlines/common.py) — file types, colours, the backdrop,
+  - [common.py](arthelper/common.py) — file types, colours, the backdrop,
     `script_dir()`, `load_image()`.
-  - [grid.py](rasterlines/grid.py) — pure grid maths: `spacing_options`,
+  - [grid.py](arthelper/grid.py) — pure grid maths: `spacing_options`,
     `default_spacing`, `grid_positions`, `cell_at`, `subdivision_lines`,
     `draw_grid`.
-  - [compose.py](rasterlines/compose.py) — pure composition maths and data:
+  - [compose.py](arthelper/compose.py) — pure composition maths and data:
     `parse_frame_size`, `fit_scale`, `Item` with its `Placement` / `Shape` /
     `Background` subclasses, `shape_mask`, `render_composition`, `flatten`.
-  - [view.py](rasterlines/view.py) — `CanvasView(ttk.Frame)`, the shared
+  - [view.py](arthelper/view.py) — `CanvasView(ttk.Frame)`, the shared
     sidebar + canvas: zoom, pan, the throttled redraw, the coordinate helpers
     and the deferred fit. Subclasses supply `content_size()` (the world they
     live in) and `render()` — `draw()` belongs to the base, which uses it to
     honour a pending fit first.
-  - [grid_mode.py](rasterlines/grid_mode.py) /
-    [compose_mode.py](rasterlines/compose_mode.py) — one `CanvasView` subclass
+  - [grid_mode.py](arthelper/grid_mode.py) /
+    [compose_mode.py](arthelper/compose_mode.py) — one `CanvasView` subclass
     each: the sidebar, the event handling and the drawing for that mode.
-  - [app.py](rasterlines/app.py) — `RasterApp(tk.Tk)`, the shell: the mode
+  - [app.py](arthelper/app.py) — `ArtHelperApp(tk.Tk)`, the shell: the mode
     switch across the top, both mode frames built up front and
     `pack`/`pack_forget`-ed as the mode changes, the shared "open a photo"
     action that hands the image to both, and `main()`.
@@ -46,13 +48,13 @@ no config files.
 - `.venv/` — local virtual environment (git-ignored).
 - `examples/screenshot.png` — the README screenshot. `.gitignore` excludes
   `*.png` but re-includes `examples/*.png`; regenerate it by driving
-  `RasterApp` and grabbing `winfo_rootx/rooty/width/height` with
+  `ArtHelperApp` and grabbing `winfo_rootx/rooty/width/height` with
   `PIL.ImageGrab`.
 
 ## Running
 
 ```powershell
-.venv\Scripts\python.exe raster_lines.py
+.venv\Scripts\python.exe art_helper.py
 ```
 
 Or double-click [run.bat](run.bat).
@@ -167,8 +169,8 @@ Or double-click [run.bat](run.bat).
 ## Testing
 
 There is no test suite. Verify changes headlessly by importing
-`rasterlines.grid` / `rasterlines.compose` — neither touches tkinter — and
-smoke-test the window by constructing `RasterApp`, calling `app.after(...)` to
+`arthelper.grid` / `arthelper.compose` — neither touches tkinter — and
+smoke-test the window by constructing `ArtHelperApp`, calling `app.after(...)` to
 drive zoom/pan, then `app.close()`.
 
 The window has to be real for the canvas to report a usable size, but

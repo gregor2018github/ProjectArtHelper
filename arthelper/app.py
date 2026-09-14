@@ -15,7 +15,7 @@ from .grid_mode import GridMode
 from .view import CanvasView
 
 
-class RasterApp(tk.Tk):
+class ArtHelperApp(tk.Tk):
     """The window: a mode switch on top, one mode frame filling the rest."""
 
     def __init__(self, path: Path | None = None, image: Image.Image | None = None) -> None:
@@ -68,10 +68,10 @@ class RasterApp(tk.Tk):
     def update_title(self) -> None:
         mode = "Compose" if self.var_mode.get() == "compose" else "Grid"
         if self.path is None or self.image is None:
-            self.title(f"Raster Lines - {mode} mode")
+            self.title(f"Art Helper - {mode} mode")
         else:
             w, h = self.image.size
-            self.title(f"Raster Lines - {mode} mode - {self.path.name}  ({w} x {h})")
+            self.title(f"Art Helper - {mode} mode - {self.path.name}  ({w} x {h})")
 
     # ----------------------------------------------------------------- image
 
@@ -122,7 +122,7 @@ def main() -> int:
             messagebox.showerror("Could not open image", f"{path}\n\n{exc}")
             return 1
 
-    RasterApp(Path(path) if image is not None else None, image).mainloop()
+    ArtHelperApp(Path(path) if image is not None else None, image).mainloop()
     return 0
 
 

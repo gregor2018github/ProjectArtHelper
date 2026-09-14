@@ -41,7 +41,7 @@ from .compose import (
 from .view import CanvasView
 
 if TYPE_CHECKING:
-    from .app import RasterApp
+    from .app import ArtHelperApp
 
 # Blending towards the dark backdrop instead would bury dark photos completely;
 # a mid grey leaves the cut-off part as a faint ghost of itself.
@@ -57,7 +57,7 @@ class ComposeMode(CanvasView):
     grab_px = 5  # how near an outline the cursor has to be, in screen pixels
     handle_px = 5  # half the size of a resize handle, also its grab radius
 
-    def __init__(self, app: RasterApp) -> None:
+    def __init__(self, app: ArtHelperApp) -> None:
         super().__init__(app)
         self.items: list[Item] = []
         self.active: Item | None = None

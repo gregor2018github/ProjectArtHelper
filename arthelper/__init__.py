@@ -1,4 +1,4 @@
-"""Raster Lines - a two-mode helper for preparing drawings.
+"""Art Helper - two tools for preparing a drawing.
 
 * `grid` / `grid_mode` - overlay a reference raster on a photo.
 * `compose` / `compose_mode` - plan a new picture inside a fixed frame.

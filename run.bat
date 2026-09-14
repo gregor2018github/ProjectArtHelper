@@ -1,3 +1,3 @@
 @echo off
 cd /d "%~dp0"
-start "" ".venv\Scripts\pythonw.exe" raster_lines.py
+start "" ".venv\Scripts\pythonw.exe" art_helper.py
