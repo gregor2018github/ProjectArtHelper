@@ -45,13 +45,9 @@ BG = "#2b2b2b"
 BG_RGB = (43, 43, 43)
 
 
-def desktop_dir() -> str:
-    """Best guess at the desktop folder, falling back to the home folder."""
-    home = Path.home()
-    for candidate in (home / "Desktop", home / "OneDrive" / "Desktop"):
-        if candidate.is_dir():
-            return str(candidate)
-    return str(home)
+def script_dir() -> str:
+    """The folder this script lives in - where the photos are kept."""
+    return str(Path(__file__).resolve().parent)
 
 
 def load_image(path: str | Path) -> Image.Image:
@@ -1074,7 +1070,7 @@ class ComposeMode(CanvasView):
         target = filedialog.asksaveasfilename(
             parent=self,
             title="Save design frame",
-            initialdir=str(self.app.path.parent) if self.app.path else desktop_dir(),
+            initialdir=str(self.app.path.parent) if self.app.path else script_dir(),
             initialfile="design.png",
             defaultextension=".png",
             filetypes=OPEN_FILETYPES,
@@ -1165,9 +1161,9 @@ class RasterApp(tk.Tk):
         self.update_title()
 
     def open_image(self) -> None:
-        start = str(self.path.parent) if self.path else desktop_dir()
         target = filedialog.askopenfilename(
-            parent=self, title="Choose a photo", initialdir=start, filetypes=OPEN_FILETYPES
+            parent=self, title="Choose a photo", initialdir=script_dir(),
+            filetypes=OPEN_FILETYPES,
         )
         if not target:
             return
@@ -1190,7 +1186,7 @@ def main() -> int:
     root.withdraw()
     path = filedialog.askopenfilename(
         title="Choose a photo (Cancel to start with an empty window)",
-        initialdir=desktop_dir(),
+        initialdir=script_dir(),
         filetypes=OPEN_FILETYPES,
     )
     root.destroy()
