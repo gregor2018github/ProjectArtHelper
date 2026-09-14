@@ -28,8 +28,8 @@ no config files.
     `default_spacing`, `grid_positions`, `cell_at`, `subdivision_lines`,
     `draw_grid`.
   - [compose.py](rasterlines/compose.py) — pure composition maths and data:
-    `parse_frame_size`, `fit_scale`, `Item` with its `Placement` / `Shape`
-    subclasses, `draw_shape`, `render_composition`.
+    `parse_frame_size`, `fit_scale`, `Item` with its `Placement` / `Shape` /
+    `Background` subclasses, `shape_mask`, `render_composition`, `flatten`.
   - [view.py](rasterlines/view.py) — `CanvasView(ttk.Frame)`, the shared
     sidebar + canvas: zoom, pan, the throttled redraw, the coordinate helpers
     and the deferred fit. Subclasses supply `content_size()` (the world they
@@ -98,6 +98,15 @@ Or double-click [run.bat](run.bat).
   same problem the grid solves by drawing canvas lines, which is why shapes
   were canvas items until the eraser needed real holes in them. The stroke runs
   *inwards* from the box, so a thick enough one closes over the middle.
+- **The background is a `Shape`, not a special case.** It is a filled
+  rectangle pinned to the frame (`fit_frame`, re-run by the `frame_size`
+  setter), so colour, the eraser and `shape_mask` all work on it unchanged. It
+  lives outside `items` — `item_at` falls through to it, which is how bare
+  frame selects it — and the `movable` / `removable` class flags on `Item` are
+  what stop it being dragged, resized or deleted.
+- **`render_composition` returns RGBA.** Erasing the background has to leave
+  something, and the honest answer is nothing: the hole is transparent. Formats
+  that cannot hold alpha go through `flatten()` on the way out.
 - **Erased bites are stored on the shape, normalised to its box** (`u`, `v`,
   `r` as fractions), so they travel and scale with it instead of being burnt
   into a bitmap. `r` is measured against `w` alone, which keeps a bite round on

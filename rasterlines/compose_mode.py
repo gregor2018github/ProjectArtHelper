@@ -6,14 +6,16 @@ import math
 import os
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import colorchooser, filedialog, messagebox, ttk
 from typing import TYPE_CHECKING
 
 from PIL import Image, ImageChops, ImageDraw, ImageOps, ImageTk
 
 from .common import BG_RGB, OPEN_FILETYPES, script_dir
 from .compose import (
+    BACKGROUND_COLOR,
     DEFAULT_ERASER_PX,
+    Background,
     FRAME_PRESETS,
     MAX_ERASER_PX,
     MIN_ERASER_PX,
@@ -21,10 +23,12 @@ from .compose import (
     MIN_FRAME,
     Item,
     Placement,
+    SHAPE_COLOR,
     Shape,
     default_shape_size,
     default_thickness,
     fit_scale,
+    flatten,
     format_size,
     parse_frame_size,
     render_composition,
@@ -53,10 +57,14 @@ class ComposeMode(CanvasView):
         super().__init__(app)
         self.items: list[Item] = []
         self.active: Item | None = None
-        self.frame_size: tuple[int, int] = FRAME_PRESETS[3]
+        self.background = Background()
+        self.shape_color = SHAPE_COLOR  # what the next new shape gets
+        self._frame_size = FRAME_PRESETS[3]
+        self.background.fit_frame(self._frame_size)
         self._item_drag = None
         self._toggle_off = False
         self._erasing = False
+        self._pending_select: Item | None = None
 
         self.var_eraser = tk.BooleanVar(value=False)
         self.var_eraser_size = tk.IntVar(value=DEFAULT_ERASER_PX)
@@ -128,6 +136,14 @@ class ComposeMode(CanvasView):
         ttk.Button(
             shape_row, text="Circle", width=8, command=lambda: self.add_shape("circle")
         ).pack(side="left", padx=4)
+        color_row = ttk.Frame(side)
+        color_row.pack(anchor="w", fill="x", pady=(4, 0))
+        ttk.Button(color_row, text="Colour...", width=10, command=self.choose_color).pack(
+            side="left"
+        )
+        ttk.Button(
+            color_row, text="Background", width=11, command=self.select_background
+        ).pack(side="left", padx=4)
         thick_row = ttk.Frame(side)
         thick_row.pack(anchor="w", fill="x", pady=(4, 6))
         ttk.Button(
@@ -142,7 +158,8 @@ class ComposeMode(CanvasView):
             text="Shapes start hollow: grab them by the outline, not the middle, so "
                  "the photo underneath stays reachable. Ctrl+wheel over an active "
                  "shape changes its thickness, up to a solid one (and zooms the view "
-                 "otherwise).",
+                 "otherwise). Colour opens the colour wheel for whatever is active - "
+                 "a shape, or the frame's background.",
             foreground="#777", wraplength=200,
         ).pack(anchor="w", pady=(0, 8))
 
@@ -198,6 +215,15 @@ class ComposeMode(CanvasView):
         canvas.bind("<Up>", lambda e: self.nudge(0, -1, e))
         canvas.bind("<Down>", lambda e: self.nudge(0, 1, e))
 
+    @property
+    def frame_size(self) -> tuple[int, int]:
+        return self._frame_size
+
+    @frame_size.setter
+    def frame_size(self, size: tuple[int, int]) -> None:
+        self._frame_size = size
+        self.background.fit_frame(size)  # the fill always covers exactly the frame
+
     def content_size(self) -> tuple[int, int]:
         return self.frame_size
 
@@ -247,7 +273,7 @@ class ComposeMode(CanvasView):
         side = default_shape_size(self.frame_size)
         shape = Shape(
             name=kind.capitalize(), kind=kind, w=side, h=side,
-            thickness=default_thickness(self.frame_size),
+            thickness=default_thickness(self.frame_size), color=self.shape_color,
         )
         shape.center_in(*self.frame_size)
         self.items.append(shape)
@@ -291,6 +317,28 @@ class ComposeMode(CanvasView):
         )
         self.request_redraw()
 
+    def select_background(self) -> None:
+        """Make the frame's fill the active item, so colour and eraser hit it."""
+        self.active = self.background
+        self.canvas.focus_set()
+        self.request_redraw()
+
+    def choose_color(self) -> None:
+        """Pick a colour for the active shape or background, from the colour wheel."""
+        item = self.active
+        if not isinstance(item, Shape):  # Background is a Shape; a photo is not
+            self.var_status.set("Select a shape or the background first, then Colour.")
+            return
+        rgb, _hex = colorchooser.askcolor(
+            color="#%02x%02x%02x" % item.color, parent=self, title=f"Colour of {item.name}"
+        )
+        if rgb is None:
+            return
+        item.color = tuple(int(round(v)) for v in rgb)
+        if not isinstance(item, Background):
+            self.shape_color = item.color  # the next shape inherits the choice
+        self.request_redraw()
+
     def step_shape_thickness(self, grow: bool) -> None:
         """Thicken or thin the active shape's outline."""
         item = self.active
@@ -308,19 +356,19 @@ class ComposeMode(CanvasView):
         self.request_redraw()
 
     def center_item(self) -> None:
-        if self.active is None:
+        if self.active is None or not self.active.movable:
             return
         self.active.center_in(*self.frame_size)
         self.request_redraw()
 
     def scale_item(self, factor: float, anchor: tuple[float, float] | None = None) -> None:
-        if self.active is None:
+        if self.active is None or not self.active.movable:
             return
         self.active.resize(factor, anchor)
         self.request_redraw()
 
     def remove_item(self) -> None:
-        if self.active is None:
+        if self.active is None or not self.active.removable:
             return
         self.items.remove(self.active)
         self.active = None
@@ -329,9 +377,9 @@ class ComposeMode(CanvasView):
         self.request_redraw()
 
     def nudge(self, dx: int, dy: int, event=None) -> None:
-        """Move the active photo; a screen pixel at a time, ten with Shift."""
+        """Move the active item; a screen pixel at a time, ten with Shift."""
         item = self.active
-        if item is None:
+        if item is None or not item.movable:
             return
         shift = bool(event and event.state & 0x0001)
         step = max(1.0, (10 if shift else 1) / self.zoom)
@@ -355,7 +403,10 @@ class ComposeMode(CanvasView):
         self.active = hit
         self.request_redraw()
         menu = tk.Menu(self, tearoff=0)
-        menu.add_command(label=f"Delete {hit.name}", command=self.remove_item)
+        if isinstance(hit, Shape):
+            menu.add_command(label=f"Colour of {hit.name}...", command=self.choose_color)
+        if hit.removable:
+            menu.add_command(label=f"Delete {hit.name}", command=self.remove_item)
         self._menu = menu  # keep it alive until it is dismissed
         try:
             menu.tk_popup(event.x_root, event.y_root)
@@ -369,7 +420,9 @@ class ComposeMode(CanvasView):
         for item in reversed(self.items):
             if item.contains(px, py, tol):
                 return item
-        return None
+        # Nothing on top: inside the frame that is the background itself, which
+        # is how it gets picked without a photo being in the way.
+        return self.background if self.background.contains(px, py) else None
 
     # ---------------------------------------------------------------- events
 
@@ -383,14 +436,16 @@ class ComposeMode(CanvasView):
             self.erase_at(event.x, event.y)
             return
         hit = self.item_at(event.x, event.y)
-        if hit is None:  # nothing under the cursor: the drag pans the view
+        # Pressing the active item again deactivates it, but only if the press
+        # turns out to be a click: dragging the active item must still move it.
+        self._toggle_off = hit is not None and hit is self.active
+        if hit is None or not hit.movable:
+            # The backdrop, or the background: either way the drag pans, and
+            # the selection is settled at release if it was a click.
             self._item_drag = None
-            self._toggle_off = False
+            self._pending_select = hit
             super().on_press(event)
             return
-        # Pressing the active photo again deactivates it, but only if the press
-        # turns out to be a click: dragging the active photo must still move it.
-        self._toggle_off = hit is self.active
         self.active = hit
         self._item_drag = (event.x, event.y, hit.x, hit.y)
         self._drag = None
@@ -419,8 +474,12 @@ class ComposeMode(CanvasView):
             return
         px, py = self._press
         clicked = abs(event.x - px) < 3 and abs(event.y - py) < 3
-        if clicked and (self._item_drag is None or self._toggle_off):
-            self.active = None  # clicked the backdrop, or the active photo again
+        if clicked:
+            if self._toggle_off:
+                self.active = None  # clicked what was already active
+            elif self._item_drag is None:
+                self.active = self._pending_select  # the background, or nothing
+        self._pending_select = None
         self._item_drag = None
         self._toggle_off = False
         self._drag = None
@@ -465,34 +524,48 @@ class ComposeMode(CanvasView):
         th = max(1, int(round((sy1 - sy0) * sc)))
         filt = Image.NEAREST if sc >= 1 else resample
         tile = item.image.crop((sx0, sy0, sx1, sy1)).resize((tw, th), filt)
-        return tile.convert("RGB"), (int(round(dx0 + sx0 * sc)), int(round(dy0 + sy0 * sc)))
+        if tile.mode not in ("RGB", "RGBA"):  # keep alpha; see-through stays see-through
+            tile = tile.convert("RGB")
+        return tile, (int(round(dx0 + sx0 * sc)), int(round(dy0 + sy0 * sc)))
 
     def _render_preview(self, cw: int, ch: int, resample: int) -> Image.Image:
-        """Backdrop, white frame, photos - faded wherever they leave the frame."""
+        """Backdrop, the frame's fill, photos and shapes - the spill faded."""
         base = Image.new("RGB", (cw, ch), BG_RGB)
         fx0, fy0 = self.to_canvas(0, 0)
         fx1, fy1 = self.to_canvas(*self.frame_size)
         rect = [int(round(fx0)), int(round(fy0)), int(round(fx1)) - 1, int(round(fy1)) - 1]
         frame_mask = Image.new("L", (cw, ch), 0)
         if rect[2] >= rect[0] and rect[3] >= rect[1]:
-            ImageDraw.Draw(base).rectangle(rect, fill=(255, 255, 255))
             ImageDraw.Draw(frame_mask).rectangle(rect, fill=255)
+        # The frame's fill is an item like any other: its colour, and its holes
+        # where the eraser has been, which show the backdrop through.
+        origin = (self.offset_x, self.offset_y)
+        base.paste(
+            Image.new("RGB", (cw, ch), self.background.color),
+            (0, 0),
+            shape_mask(self.background, (cw, ch), self.zoom, origin, min_width=1),
+        )
 
         layer = Image.new("RGB", (cw, ch), BG_RGB)
         drawn = Image.new("L", (cw, ch), 0)  # where a photo or a shape landed
         for item in self.items:
             if not isinstance(item, Placement):
-                continue  # shapes are canvas items, drawn over this bitmap
+                continue  # shapes come after, over the photos
             tile = self._tile(item, cw, ch, resample)
             if tile is None:
                 continue
             img, pos = tile
-            layer.paste(img, pos)
-            drawn.paste(Image.new("L", img.size, 255), pos)
+            if img.mode == "RGBA":
+                # A photo with transparency shows what is behind it, and only
+                # counts as covered where it is actually opaque.
+                layer.paste(img, pos, img)
+                drawn.paste(img.getchannel("A"), pos)
+            else:
+                layer.paste(img, pos)
+                drawn.paste(Image.new("L", img.size, 255), pos)
         # Shapes go over the photos, through the same mask, so that the spill
         # outside the frame fades for them too. `min_width` keeps a thin
         # outline one screen pixel wide however far out the view is zoomed.
-        origin = (self.offset_x, self.offset_y)
         for item in self.items:
             if not isinstance(item, Shape):
                 continue
@@ -520,6 +593,7 @@ class ComposeMode(CanvasView):
         key = (
             cw, ch, round(self.offset_x, 2), round(self.offset_y, 2), round(self.zoom, 6),
             self.frame_size, resample,
+            self.background.color, len(self.background.erased),
             tuple(
                 (id(i.image), round(i.x, 2), round(i.y, 2), round(i.scale, 6))
                 if isinstance(i, Placement)
@@ -546,7 +620,9 @@ class ComposeMode(CanvasView):
                 bx0, by0, bx1, by1, outline="#4ea1ff", width=2, dash=(5, 3)
             )
             w, h = item.size
-            if not isinstance(item, Shape):
+            if isinstance(item, Background):
+                detail = "frame fill - colour #%02x%02x%02x" % item.color
+            elif not isinstance(item, Shape):
                 detail = f"{item.scale * 100:.1f}%"
             elif item.filled:
                 detail = "filled"
@@ -565,7 +641,8 @@ class ComposeMode(CanvasView):
     # ------------------------------------------------------------------ save
 
     def save_as(self) -> None:
-        if not self.items:
+        untouched = self.background.color == BACKGROUND_COLOR and not self.background.erased
+        if not self.items and untouched:
             messagebox.showinfo("Nothing to save", "Place a photo or a shape first.", parent=self)
             return
         target = filedialog.asksaveasfilename(
@@ -579,11 +656,11 @@ class ComposeMode(CanvasView):
         if not target:
             return
         try:
-            result = render_composition(self.frame_size, self.items)
-            if Path(target).suffix.lower() in (".jpg", ".jpeg"):
-                result.save(target, quality=95, subsampling=0)
+            result = render_composition(self.frame_size, self.items, self.background)
+            if Path(target).suffix.lower() in (".jpg", ".jpeg", ".bmp"):
+                flatten(result).save(target, quality=95, subsampling=0)
             else:
-                result.save(target)
+                result.save(target)  # PNG and friends keep the erased holes clear
         except Exception as exc:  # noqa: BLE001 - surface any save failure to the user
             messagebox.showerror("Save failed", str(exc), parent=self)
             return

@@ -51,10 +51,16 @@ the buttons in the top left:
 - Clicking the backdrop deactivates it too. With nothing active the wheel zooms
   the view instead, as does `Ctrl`+wheel — except over an active shape, where
   `Ctrl`+wheel sets the outline thickness.
+- **Colour…** opens the colour wheel for whatever is active — a rectangle, a
+  circle, or the frame's background. New shapes take the colour you last chose.
+- **Background** selects the frame's own fill, which you can also pick by
+  clicking bare frame. It cannot be moved, resized or deleted, but it takes a
+  colour and the eraser like anything else.
 - **Eraser**: tick it, set a brush size in pixels, and scrub over a shape to
   scratch its outline away — so a circle can be made to pass *behind* the
-  subject. **Reset eraser** puts back what the active shape lost, or what every
-  shape lost when nothing is active.
+  subject. With the **background** active it eats holes in the frame's fill
+  instead, and those save out transparent. **Reset eraser** puts back what the
+  active item lost, or what everything lost when nothing is active.
 - **Rectangle** / **Circle** drop a hollow shape in the middle of the frame.
   They are outlines only, so you grab them *by the outline*, not through the
   middle — the photo underneath stays reachable. `Ctrl`+wheel (or the `-` / `+`
@@ -67,8 +73,9 @@ the buttons in the top left:
 - Whatever hangs over the frame edge is drawn as a faint grey ghost, so the
   part that actually makes it into the picture stays obvious.
 - **Save frame as…** writes exactly the frame — frame-sized, everything outside
-  it cropped away, white behind anything the photo does not cover, with the
-  shapes drawn over the photo in red.
+  it cropped away, the background behind the photo and the shapes over it.
+  PNG keeps erased background as transparency; JPEG and BMP cannot, so those
+  get white there instead.
 
 ## Requirements
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass, field
+from typing import ClassVar
 
 from PIL import Image, ImageDraw
 
@@ -54,6 +55,10 @@ def fit_scale(iw: int, ih: int, fw: int, fh: int, cover: bool = False) -> float:
 @dataclass
 class Item:
     """Something sitting in the frame; x / y are its top-left in frame pixels."""
+
+    # What the mode may do with this item; the background says no to both.
+    movable: ClassVar[bool] = True
+    removable: ClassVar[bool] = True
 
     name: str
     x: float = 0.0
@@ -229,6 +234,32 @@ class Shape(Item):
         self.h *= factor
 
 
+BACKGROUND_COLOR = (255, 255, 255)
+
+
+@dataclass
+class Background(Shape):
+    """The frame's own fill.
+
+    A `Shape` so that colour, the eraser and the one drawing path all work on
+    it unchanged; pinned to the frame, and neither movable nor removable. Where
+    it has been erased the saved file is transparent - there is nothing behind
+    it but the backdrop.
+    """
+
+    movable: ClassVar[bool] = False
+    removable: ClassVar[bool] = False
+
+    name: str = "Background"
+    color: tuple[int, int, int] = BACKGROUND_COLOR
+
+    def fit_frame(self, frame_size: tuple[int, int]) -> None:
+        """Follow the frame; the stroke is always thick enough to fill it."""
+        self.x = self.y = 0.0
+        self.w, self.h = float(frame_size[0]), float(frame_size[1])
+        self.thickness = self.max_thickness
+
+
 def _ellipse_ratio(px: float, py: float, cx: float, cy: float, rx: float, ry: float) -> float:
     """< 1 inside the ellipse, 1 on it, > 1 outside; a collapsed one holds nothing."""
     if rx <= 0 or ry <= 0:
@@ -286,15 +317,24 @@ def shape_mask(
 def render_composition(
     frame_size: tuple[int, int],
     items: list[Item],
-    background: tuple[int, int, int] = (255, 255, 255),
+    background: Background | None = None,
 ) -> Image.Image:
-    """Flatten the items into the final frame-sized image.
+    """Flatten the items into the final frame-sized RGBA image.
 
     Everything outside the frame is simply cropped away - the greyed-out spill
-    is a preview aid, not part of the result. Shapes go on last, matching the
-    preview, where they are drawn over the photos for the same reason.
+    is a preview aid, not part of the result. The background goes down first
+    and the shapes last, matching the preview. Anything the background does not
+    cover - because it was erased, or never there - stays transparent.
     """
-    out = Image.new("RGB", frame_size, background)
+    out = Image.new("RGBA", frame_size, (0, 0, 0, 0))
+    if background is None:
+        background = Background()
+        background.fit_frame(frame_size)
+    out.paste(
+        Image.new("RGB", frame_size, background.color),
+        (0, 0),
+        shape_mask(background, frame_size),
+    )
     for item in items:
         if isinstance(item, Placement):
             w = max(1, round(item.image.width * item.scale))
@@ -309,3 +349,12 @@ def render_composition(
                 shape_mask(item, frame_size),
             )
     return out
+
+
+def flatten(image: Image.Image, behind: tuple[int, int, int] = (255, 255, 255)) -> Image.Image:
+    """Drop the alpha for formats that cannot keep it, e.g. JPEG."""
+    if image.mode != "RGBA":
+        return image.convert("RGB")
+    flat = Image.new("RGB", image.size, behind)
+    flat.paste(image, (0, 0), image)
+    return flat
