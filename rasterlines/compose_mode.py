@@ -29,9 +29,12 @@ from .compose import (
     default_thickness,
     fit_scale,
     flatten,
+    handle_at,
+    handle_points,
     format_size,
     parse_frame_size,
     render_composition,
+    resize_box,
     shape_mask,
     step_thickness,
 )
@@ -52,6 +55,7 @@ class ComposeMode(CanvasView):
     fit_padding = 0.88
     clamp_margin = 0.75  # the photo may hang well outside, so let the view follow
     grab_px = 5  # how near an outline the cursor has to be, in screen pixels
+    handle_px = 5  # half the size of a resize handle, also its grab radius
 
     def __init__(self, app: RasterApp) -> None:
         super().__init__(app)
@@ -65,6 +69,7 @@ class ComposeMode(CanvasView):
         self._toggle_off = False
         self._erasing = False
         self._pending_select: Item | None = None
+        self._resize: tuple[str, tuple[float, float, float, float]] | None = None
 
         self.var_eraser = tk.BooleanVar(value=False)
         self.var_eraser_size = tk.IntVar(value=DEFAULT_ERASER_PX)
@@ -121,7 +126,8 @@ class ComposeMode(CanvasView):
             text="Left-click a photo or shape to activate it, then wheel or +/- to "
                  "resize and drag to move; arrow keys nudge. Delete removes what is "
                  "active, and a right-click offers the same. Click it again, or the "
-                 "backdrop, to deselect.",
+                 "backdrop, to deselect. An active shape shows handles: drag a side "
+                 "to stretch it, a corner for both edges at once.",
             foreground="#777", wraplength=200,
         ).pack(anchor="w", pady=(0, 12))
 
@@ -208,6 +214,7 @@ class ComposeMode(CanvasView):
             canvas.bind(seq, lambda _e: self.scale_item(1 / 1.1))
         canvas.bind("<Delete>", lambda _e: self.remove_item())
         canvas.bind("<Button-3>", self.on_right_click)
+        canvas.bind("<Motion>", self.on_motion)
         # Delete has to work even when a sidebar control holds the focus, so it
         # is bound on the window too - but not while a text field has it, where
         # the key means "delete a character".
@@ -282,6 +289,28 @@ class ComposeMode(CanvasView):
         self.active = shape
         self.canvas.focus_set()  # so Delete and the arrows work straight away
         self.request_redraw()
+
+    HANDLE_CURSORS = {
+        "nw": "top_left_corner", "ne": "top_right_corner",
+        "se": "bottom_right_corner", "sw": "bottom_left_corner",
+        "n": "sb_v_double_arrow", "s": "sb_v_double_arrow",
+        "e": "sb_h_double_arrow", "w": "sb_h_double_arrow",
+    }
+
+    def handle_at(self, cx: float, cy: float) -> str | None:
+        """The resize handle under a canvas point - active, reshapeable shapes only."""
+        item = self.active
+        if self.var_eraser.get() or not isinstance(item, Shape) or not item.movable:
+            return None
+        px, py = self.to_image(cx, cy)
+        return handle_at(item.box, px, py, self.handle_px / self.zoom)
+
+    def on_motion(self, event) -> None:
+        """Show what a press would do here: reshape on a handle, otherwise not."""
+        if self._resize or self._item_drag or self._drag or self._erasing:
+            return
+        handle = self.handle_at(event.x, event.y)
+        self.canvas.config(cursor=self.HANDLE_CURSORS.get(handle, "") if handle else "")
 
     @property
     def eraser_radius(self) -> float:
@@ -400,7 +429,9 @@ class ComposeMode(CanvasView):
     def _on_delete_key(self, _event=None) -> None:
         if not self.winfo_ismapped():
             return  # the other mode is on screen
-        focused = self.focus_get()
+        # focus_get() is None whenever the window itself is not the active one,
+        # so fall back to whoever would get the focus back.
+        focused = self.focus_get() or self.winfo_toplevel().focus_lastfor()
         if isinstance(focused, (ttk.Entry, ttk.Spinbox, tk.Entry, tk.Spinbox)):
             return  # a combobox or spinbox is being edited; leave the text alone
         self.remove_item()
@@ -445,6 +476,16 @@ class ComposeMode(CanvasView):
             self._erasing = True
             self.erase_at(event.x, event.y)
             return
+        handle = self.handle_at(event.x, event.y)
+        if handle is not None:
+            # A press on a handle of the active shape reshapes it; the press has
+            # to be on the handle, so a drag anywhere else still moves it.
+            self._resize = (handle, self.active.box)
+            self._item_drag = None
+            self._drag = None
+            self._toggle_off = False
+            self.canvas.config(cursor=self.HANDLE_CURSORS[handle])
+            return
         hit = self.item_at(event.x, event.y)
         # Pressing the active item again deactivates it, but only if the press
         # turns out to be a click: dragging the active item must still move it.
@@ -466,6 +507,17 @@ class ComposeMode(CanvasView):
         if self._erasing:
             self.erase_at(event.x, event.y)
             return
+        if self._resize is not None:
+            handle, box = self._resize
+            shape = self.active
+            if isinstance(shape, Shape):
+                px, py = self.to_image(event.x, event.y)
+                x0, y0, x1, y1 = resize_box(box, handle, px, py)
+                shape.x, shape.y = x0, y0
+                shape.w, shape.h = x1 - x0, y1 - y0
+                self._drag = self._resize  # a drag is in flight: cheap filter
+                self.request_redraw()
+            return
         if not self._item_drag:
             super().on_drag(event)
             return
@@ -481,6 +533,12 @@ class ComposeMode(CanvasView):
         if self._erasing:
             self._erasing = False
             self.request_redraw()
+            return
+        if self._resize is not None:
+            self._resize = None
+            self._drag = None
+            self.canvas.config(cursor="")
+            self.request_redraw()  # redo the last frame at full quality
             return
         px, py = self._press
         clicked = abs(event.x - px) < 3 and abs(event.y - py) < 3
@@ -629,6 +687,16 @@ class ComposeMode(CanvasView):
             self.canvas.create_rectangle(
                 bx0, by0, bx1, by1, outline="#4ea1ff", width=2, dash=(5, 3)
             )
+            if isinstance(item, Shape) and item.movable:
+                # Handles are chrome, not content, so they stay canvas items:
+                # always the same size on screen, whatever the zoom.
+                r = self.handle_px
+                for hx, hy in handle_points(item.box).values():
+                    px_, py_ = self.to_canvas(hx, hy)
+                    self.canvas.create_rectangle(
+                        px_ - r, py_ - r, px_ + r, py_ + r,
+                        fill="#4ea1ff", outline="#ffffff",
+                    )
             w, h = item.size
             if isinstance(item, Background):
                 detail = "frame fill - colour #%02x%02x%02x" % item.color

@@ -267,6 +267,61 @@ def _ellipse_ratio(px: float, py: float, cx: float, cy: float, rx: float, ry: fl
     return ((px - cx) / rx) ** 2 + ((py - cy) / ry) ** 2
 
 
+# Resize handles, corners first so a corner wins over the two sides meeting
+# there. The names say which edges the handle moves: "nw" moves north and west.
+HANDLES = ("nw", "ne", "se", "sw", "n", "e", "s", "w")
+
+
+def handle_points(
+    box: tuple[float, float, float, float]
+) -> dict[str, tuple[float, float]]:
+    """Where each resize handle sits on a box."""
+    x0, y0, x1, y1 = box
+    mx, my = (x0 + x1) / 2, (y0 + y1) / 2
+    return {
+        "nw": (x0, y0), "ne": (x1, y0), "se": (x1, y1), "sw": (x0, y1),
+        "n": (mx, y0), "e": (x1, my), "s": (mx, y1), "w": (x0, my),
+    }
+
+
+def handle_at(
+    box: tuple[float, float, float, float], px: float, py: float, tol: float
+) -> str | None:
+    """Which handle of *box* the point is on, if any; corners beat sides."""
+    points = handle_points(box)
+    for name in HANDLES:
+        hx, hy = points[name]
+        if abs(px - hx) <= tol and abs(py - hy) <= tol:
+            return name
+    return None
+
+
+def resize_box(
+    box: tuple[float, float, float, float],
+    handle: str,
+    px: float,
+    py: float,
+    min_size: float = MIN_SHAPE,
+) -> tuple[float, float, float, float]:
+    """The box after dragging *handle* to (px, py).
+
+    Only the edges the handle names move, so the opposite side stays put and a
+    side handle changes one dimension alone - that is what makes a drag read as
+    a reshape rather than a move. An edge stops rather than folding through the
+    one opposite it.
+    """
+    x0, y0, x1, y1 = box
+    if "w" in handle:
+        x0 = min(px, x1 - min_size)
+    if "e" in handle:
+        x1 = max(px, x0 + min_size)
+    if "n" in handle:
+        y0 = min(py, y1 - min_size)
+    if "s" in handle:
+        y1 = max(py, y0 + min_size)
+    return x0, y0, x1, y1
+
+
 def shape_mask(
     shape: Shape,
     size: tuple[int, int],

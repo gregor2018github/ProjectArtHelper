@@ -87,6 +87,14 @@ Or double-click [run.bat](run.bat).
   grow/shrink for both; a subclass only says how far it may go (`_limit`) and
   how to apply it (`_apply`), so the move and the resize stay in step at the
   stops. Loading a photo replaces the `Placement`s and keeps the shapes.
+- **Reshaping is handle-only, moving is everything else.** `handle_at()` is
+  checked before the item hit test, but only for the shape that is already
+  active and only within `handle_px` of one of the eight points, so an ordinary
+  drag on the outline still moves the shape — the press position alone decides
+  which it is. `resize_box()` moves only the edges the handle names, leaving
+  the opposite one anchored, which is what makes a drag read as a reshape; it
+  also stops an edge folding through its opposite. The handles are canvas items
+  (chrome, not content), so they stay the same size on screen at any zoom.
 - **A shape is grabbed by its outline, never through its middle** (`Shape.
   contains`), so a shape laid over the photo does not make the photo
   unclickable. Hit tests take a tolerance, which the view passes as

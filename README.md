@@ -46,6 +46,11 @@ the buttons in the top left:
     (ten with Shift),
   - `Delete` removes it — from anywhere in the window, not just over the
     canvas, though not while you are typing in the frame-size box.
+- An active **shape shows eight handles**. Drag a side handle to stretch that
+  edge alone, a corner handle to move both edges at once — that is how a square
+  becomes any rectangle you like. The opposite edge stays put, so the shape
+  reshapes rather than drifting, and dragging anywhere else on it still moves
+  it. The wheel keeps scaling the whole shape, aspect ratio and all.
 - **Right-click** a photo or an outline to select it and get a **Delete** entry
   for it.
 - Clicking the backdrop deactivates it too. With nothing active the wheel zooms
