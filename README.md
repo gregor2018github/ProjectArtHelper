@@ -7,7 +7,8 @@ the buttons in the top left:
   difficult subjects square by square instead of building the grid by hand in
   an image editor.
 - **Compose mode** plans a new picture: you set the final frame size, drop a
-  photo into it, and move and scale it until the crop is right.
+  photo into it, block areas out with hollow rectangles and circles, and move
+  and scale everything until the composition works.
 
 ![The app showing a 125 px red raster over a drawing](examples/screenshot.png)
 
@@ -37,21 +38,28 @@ the buttons in the top left:
   (`3500:2400` and `3500x2400` work too).
 - The photo you opened is dropped into the frame, scaled to fit and centred,
   with the view zoomed so the frame and the photo both fill the window.
-- **Left-click the photo to activate it**, and click it again to deactivate.
-  While it is active:
+- **Left-click a photo or a shape to activate it**, and click it again to
+  deactivate. While something is active:
   - the mouse wheel resizes it, anchored at the cursor,
   - `+` / `-` resize it around its own centre,
   - dragging moves it, and the arrow keys nudge it a screen pixel at a time
     (ten with Shift),
   - `Delete` removes it.
 - Clicking the backdrop deactivates it too. With nothing active the wheel zooms
-  the view instead; `Ctrl`+wheel always zooms the view, active photo or not.
+  the view instead, as does `Ctrl`+wheel — except over an active shape, where
+  `Ctrl`+wheel sets the outline thickness.
+- **Rectangle** / **Circle** drop a hollow shape in the middle of the frame.
+  They are outlines only, so you grab them *by the outline*, not through the
+  middle — the photo underneath stays reachable. `Ctrl`+wheel (or the `-` / `+`
+  next to **line thickness**) makes the outline thicker or thinner; the wheel
+  alone resizes the shape like anything else.
 - **Fit in** / **Fill** / **Centre** place the photo against the frame in one
   click.
 - Whatever hangs over the frame edge is drawn as a faint grey ghost, so the
   part that actually makes it into the picture stays obvious.
 - **Save frame as…** writes exactly the frame — frame-sized, everything outside
-  it cropped away, white behind anything the photo does not cover.
+  it cropped away, white behind anything the photo does not cover, with the
+  shapes drawn over the photo in red.
 
 ## Requirements
 

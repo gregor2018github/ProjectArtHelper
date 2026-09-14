@@ -5,8 +5,9 @@ Two modes share one window:
 * **Grid mode** overlays a regular raster on a photo and saves a copy with the
   lines baked in, to replace drawing the grid by hand before copying a subject.
 * **Compose mode** plans a new picture: choose the final frame size, drop a
-  photo into it, and move / scale it until the crop is right. Whatever spills
-  over the frame edge is shown greyed out so the final crop stays obvious.
+  photo into it, block areas out with hollow rectangles and circles, and move /
+  scale everything until the composition works. Whatever spills over the frame
+  edge is shown greyed out so the final crop stays obvious.
 """
 
 from __future__ import annotations
@@ -198,62 +199,186 @@ def fit_scale(iw: int, ih: int, fw: int, fh: int, cover: bool = False) -> float:
 
 
 @dataclass
-class Placement:
-    """One photo dropped into the frame; x / y / scale are in frame pixels."""
+class Item:
+    """Something sitting in the frame; x / y are its top-left in frame pixels."""
 
-    image: Image.Image
     name: str
     x: float = 0.0
     y: float = 0.0
-    scale: float = 1.0
 
     @property
     def size(self) -> tuple[float, float]:
-        return self.image.width * self.scale, self.image.height * self.scale
+        raise NotImplementedError
 
     @property
     def box(self) -> tuple[float, float, float, float]:
         w, h = self.size
         return self.x, self.y, self.x + w, self.y + h
 
-    def contains(self, px: float, py: float) -> bool:
+    @property
+    def center(self) -> tuple[float, float]:
+        w, h = self.size
+        return self.x + w / 2, self.y + h / 2
+
+    def contains(self, px: float, py: float, tol: float = 0.0) -> bool:
+        """Is (px, py) on this item? *tol* widens the grab area in frame pixels."""
         x0, y0, x1, y1 = self.box
-        return x0 <= px <= x1 and y0 <= py <= y1
+        return x0 - tol <= px <= x1 + tol and y0 - tol <= py <= y1 + tol
 
     def center_in(self, fw: int, fh: int) -> None:
         w, h = self.size
         self.x = (fw - w) / 2
         self.y = (fh - h) / 2
 
+    def resize(self, factor: float, anchor: tuple[float, float] | None = None) -> None:
+        """Grow or shrink, keeping the frame point *anchor* over the same spot.
+
+        Limits belong to the subclass: `_limit` trims the factor to what it can
+        actually take, so the move and the resize stay in step at the stops.
+        """
+        factor = self._limit(factor)
+        if factor == 1.0:
+            return
+        ax, ay = self.center if anchor is None else anchor
+        self.x = ax - (ax - self.x) * factor
+        self.y = ay - (ay - self.y) * factor
+        self._apply(factor)
+
+    def _limit(self, factor: float) -> float:
+        return factor
+
+    def _apply(self, factor: float) -> None:
+        raise NotImplementedError
+
+
+@dataclass
+class Placement(Item):
+    """A photo dropped into the frame."""
+
+    image: Image.Image = None  # type: ignore[assignment]
+    scale: float = 1.0
+
+    @property
+    def size(self) -> tuple[float, float]:
+        return self.image.width * self.scale, self.image.height * self.scale
+
     def rescale(self, scale: float, anchor: tuple[float, float] | None = None) -> None:
-        """Set the scale, keeping the frame point *anchor* over the same pixel."""
-        new = max(MIN_SCALE, min(scale, MAX_SCALE))
-        if anchor is None:  # no anchor: grow and shrink around the middle
-            w, h = self.size
-            anchor = (self.x + w / 2, self.y + h / 2)
-        ax, ay = anchor
-        ratio = new / self.scale
-        self.x = ax - (ax - self.x) * ratio
-        self.y = ay - (ay - self.y) * ratio
-        self.scale = new
+        """Set an absolute scale, keeping *anchor* over the same pixel."""
+        self.resize(max(MIN_SCALE, min(scale, MAX_SCALE)) / self.scale, anchor)
+
+    def _limit(self, factor: float) -> float:
+        return max(MIN_SCALE, min(self.scale * factor, MAX_SCALE)) / self.scale
+
+    def _apply(self, factor: float) -> None:
+        self.scale *= factor
+
+
+SHAPE_KINDS = ("rectangle", "circle")
+MIN_SHAPE, MAX_SHAPE = 8.0, float(MAX_FRAME * 4)
+MIN_THICKNESS, MAX_THICKNESS = 1, 400
+SHAPE_COLOR = (255, 0, 0)
+
+
+def default_shape_size(frame_size: tuple[int, int]) -> float:
+    """A new shape covers about a third of the frame's short edge."""
+    return max(MIN_SHAPE, min(frame_size) / 3)
+
+
+def default_thickness(frame_size: tuple[int, int]) -> int:
+    """An outline that reads at a glance whatever the frame resolution is."""
+    return max(2, round(min(frame_size) / 200))
+
+
+def step_thickness(thickness: int, grow: bool) -> int:
+    """One notch of the wheel; proportional, so big outlines are not 1 px work."""
+    delta = max(1, round(thickness * 0.25))
+    return max(MIN_THICKNESS, min(thickness + (delta if grow else -delta), MAX_THICKNESS))
+
+
+@dataclass
+class Shape(Item):
+    """A hollow rectangle or ellipse used to block out the composition.
+
+    The box is the outer edge of the stroke and the stroke runs inwards, which
+    is what `ImageDraw`'s `width` does, so preview and saved file agree.
+    """
+
+    kind: str = "rectangle"
+    w: float = 100.0
+    h: float = 100.0
+    thickness: int = 4
+    color: tuple[int, int, int] = SHAPE_COLOR
+
+    @property
+    def size(self) -> tuple[float, float]:
+        return self.w, self.h
+
+    def contains(self, px: float, py: float, tol: float = 0.0) -> bool:
+        """Only the outline counts - the hollow middle belongs to what is under it."""
+        x0, y0, x1, y1 = self.box
+        band = self.thickness + tol
+        if self.kind == "circle":
+            cx, cy = self.center
+            rx, ry = self.w / 2, self.h / 2
+            if _ellipse_ratio(px, py, cx, cy, rx + tol, ry + tol) > 1.0:
+                return False
+            return _ellipse_ratio(px, py, cx, cy, rx - band, ry - band) >= 1.0
+        if not (x0 - tol <= px <= x1 + tol and y0 - tol <= py <= y1 + tol):
+            return False
+        return not (x0 + band < px < x1 - band and y0 + band < py < y1 - band)
+
+    def _limit(self, factor: float) -> float:
+        smallest = min(self.w, self.h)
+        largest = max(self.w, self.h)
+        return max(MIN_SHAPE / smallest, min(factor, MAX_SHAPE / largest))
+
+    def _apply(self, factor: float) -> None:
+        self.w *= factor
+        self.h *= factor
+
+
+def _ellipse_ratio(px: float, py: float, cx: float, cy: float, rx: float, ry: float) -> float:
+    """< 1 inside the ellipse, 1 on it, > 1 outside; a collapsed one holds nothing."""
+    if rx <= 0 or ry <= 0:
+        return float("inf")
+    return ((px - cx) / rx) ** 2 + ((py - cy) / ry) ** 2
+
+
+def draw_shape(draw: ImageDraw.ImageDraw, shape: Shape) -> None:
+    """Stroke one shape at full resolution, inwards from its box."""
+    x0, y0, x1, y1 = (round(v) for v in shape.box)
+    if x1 <= x0 or y1 <= y0:
+        return
+    box = [x0, y0, x1 - 1, y1 - 1]
+    width = max(1, min(shape.thickness, (x1 - x0) // 2 + 1, (y1 - y0) // 2 + 1))
+    if shape.kind == "circle":
+        draw.ellipse(box, outline=shape.color, width=width)
+    else:
+        draw.rectangle(box, outline=shape.color, width=width)
 
 
 def render_composition(
     frame_size: tuple[int, int],
-    items: list[Placement],
+    items: list[Item],
     background: tuple[int, int, int] = (255, 255, 255),
 ) -> Image.Image:
-    """Flatten the placements into the final frame-sized image.
+    """Flatten the items into the final frame-sized image.
 
     Everything outside the frame is simply cropped away - the greyed-out spill
-    is a preview aid, not part of the result.
+    is a preview aid, not part of the result. Shapes go on last, matching the
+    preview, where they are canvas items drawn over the photo bitmap.
     """
     out = Image.new("RGB", frame_size, background)
     for item in items:
-        w = max(1, round(item.image.width * item.scale))
-        h = max(1, round(item.image.height * item.scale))
-        layer = item.image.convert("RGBA").resize((w, h), Image.LANCZOS)
-        out.paste(layer, (round(item.x), round(item.y)), layer)
+        if isinstance(item, Placement):
+            w = max(1, round(item.image.width * item.scale))
+            h = max(1, round(item.image.height * item.scale))
+            layer = item.image.convert("RGBA").resize((w, h), Image.LANCZOS)
+            out.paste(layer, (round(item.x), round(item.y)), layer)
+    draw = ImageDraw.Draw(out)
+    for item in items:
+        if isinstance(item, Shape):
+            draw_shape(draw, item)
     return out
 
 
@@ -780,15 +905,16 @@ MUTE_RGB = (120, 120, 120)
 
 
 class ComposeMode(CanvasView):
-    """Plan a new picture: a fixed output frame plus a photo placed inside it."""
+    """Plan a new picture: a fixed output frame, a photo and blocking-out shapes."""
 
     fit_padding = 0.88
     clamp_margin = 0.75  # the photo may hang well outside, so let the view follow
+    grab_px = 5  # how near an outline the cursor has to be, in screen pixels
 
     def __init__(self, app: RasterApp) -> None:
         super().__init__(app)
-        self.items: list[Placement] = []
-        self.active: Placement | None = None
+        self.items: list[Item] = []
+        self.active: Item | None = None
         self.frame_size: tuple[int, int] = FRAME_PRESETS[3]
         self._item_drag = None
         self._toggle_off = False
@@ -825,7 +951,9 @@ class ComposeMode(CanvasView):
         ).pack(anchor="w", pady=(0, 12))
 
         ttk.Separator(side).pack(fill="x", pady=4)
-        ttk.Label(side, text="Photo", font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(4, 2))
+        ttk.Label(side, text="Active item", font=("Segoe UI", 9, "bold")).pack(
+            anchor="w", pady=(4, 2)
+        )
         ttk.Label(side, textvariable=self.var_scale, foreground="#237", wraplength=200).pack(
             anchor="w", pady=(0, 6)
         )
@@ -841,9 +969,37 @@ class ComposeMode(CanvasView):
         ttk.Button(scale_row, text="Remove", width=8, command=self.remove_item).pack(side="left")
         ttk.Label(
             side,
-            text="Left-click the photo to activate it, then wheel or +/- to resize "
-                 "and drag to move; arrow keys nudge. Click the backdrop to "
-                 "deselect. Ctrl+wheel always zooms the view instead.",
+            text="Left-click a photo or shape to activate it, then wheel or +/- to "
+                 "resize and drag to move; arrow keys nudge, Delete removes. Click "
+                 "it again, or the backdrop, to deselect.",
+            foreground="#777", wraplength=200,
+        ).pack(anchor="w", pady=(0, 12))
+
+        ttk.Separator(side).pack(fill="x", pady=4)
+        ttk.Label(side, text="Shapes", font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(4, 2))
+        shape_row = ttk.Frame(side)
+        shape_row.pack(anchor="w", fill="x")
+        ttk.Button(
+            shape_row, text="Rectangle", width=10,
+            command=lambda: self.add_shape("rectangle"),
+        ).pack(side="left")
+        ttk.Button(
+            shape_row, text="Circle", width=8, command=lambda: self.add_shape("circle")
+        ).pack(side="left", padx=4)
+        thick_row = ttk.Frame(side)
+        thick_row.pack(anchor="w", fill="x", pady=(4, 6))
+        ttk.Button(
+            thick_row, text="-", width=3, command=lambda: self.step_shape_thickness(False)
+        ).pack(side="left")
+        ttk.Button(
+            thick_row, text="+", width=3, command=lambda: self.step_shape_thickness(True)
+        ).pack(side="left", padx=4)
+        ttk.Label(thick_row, text="line thickness").pack(side="left")
+        ttk.Label(
+            side,
+            text="Shapes are hollow: grab them by the outline, not the middle, so "
+                 "the photo underneath stays reachable. Ctrl+wheel over an active "
+                 "shape changes its thickness (and zooms the view otherwise).",
             foreground="#777", wraplength=200,
         ).pack(anchor="w", pady=(0, 12))
 
@@ -854,7 +1010,7 @@ class ComposeMode(CanvasView):
         ttk.Button(zoom_row, text="+", width=3, command=lambda: self.zoom_by(1.25)).pack(side="left", padx=4)
         ttk.Button(zoom_row, text="Fit", width=5, command=self.fit_to_window).pack(side="left")
         ttk.Button(zoom_row, text="100%", width=6, command=lambda: self.set_zoom(1.0)).pack(side="left", padx=4)
-        ttk.Label(side, text="View zoom, not the photo", foreground="#777").pack(anchor="w")
+        ttk.Label(side, text="View zoom, not the item", foreground="#777").pack(anchor="w")
 
         ttk.Separator(side).pack(fill="x", pady=8)
         ttk.Button(side, text="Save frame as...", command=self.save_as).pack(fill="x", ipady=4)
@@ -911,14 +1067,35 @@ class ComposeMode(CanvasView):
         item = Placement(image=image, name=path.name)
         item.scale = fit_scale(image.width, image.height, *self.frame_size)
         item.center_in(*self.frame_size)
-        self.items = [item]  # one photo for now; the list keeps room for more
+        # one photo for now, but the shapes already on the plan must survive it
+        self.items = [item] + [i for i in self.items if not isinstance(i, Placement)]
         self.active = item
         self.var_info.set(f"{path.name}\n{image.width} x {image.height} px")
         self.request_fit()
 
+    def add_shape(self, kind: str) -> None:
+        """Drop a hollow shape in the middle of the frame and activate it."""
+        side = default_shape_size(self.frame_size)
+        shape = Shape(
+            name=kind.capitalize(), kind=kind, w=side, h=side,
+            thickness=default_thickness(self.frame_size),
+        )
+        shape.center_in(*self.frame_size)
+        self.items.append(shape)
+        self.active = shape
+        self.request_redraw()
+
+    def step_shape_thickness(self, grow: bool) -> None:
+        """Thicken or thin the active shape's outline."""
+        item = self.active
+        if not isinstance(item, Shape):
+            return
+        item.thickness = step_thickness(item.thickness, grow)
+        self.request_redraw()
+
     def fit_item(self, cover: bool) -> None:
         item = self.active
-        if item is None:
+        if not isinstance(item, Placement):
             return
         item.rescale(fit_scale(item.image.width, item.image.height, *self.frame_size, cover=cover))
         item.center_in(*self.frame_size)
@@ -933,15 +1110,15 @@ class ComposeMode(CanvasView):
     def scale_item(self, factor: float, anchor: tuple[float, float] | None = None) -> None:
         if self.active is None:
             return
-        self.active.rescale(self.active.scale * factor, anchor)
+        self.active.resize(factor, anchor)
         self.request_redraw()
 
     def remove_item(self) -> None:
         if self.active is None:
             return
         self.items.remove(self.active)
-        self.active = self.items[-1] if self.items else None
-        if not self.items:
+        self.active = None
+        if not any(isinstance(i, Placement) for i in self.items):
             self.var_info.set("No photo placed")
         self.request_redraw()
 
@@ -956,10 +1133,12 @@ class ComposeMode(CanvasView):
         item.y += dy * step
         self.request_redraw()
 
-    def item_at(self, cx: float, cy: float) -> Placement | None:
+    def item_at(self, cx: float, cy: float) -> Item | None:
+        """Topmost item under a canvas point, shapes before the photo they sit on."""
         px, py = self.to_image(cx, cy)
-        for item in reversed(self.items):  # topmost first
-            if item.contains(px, py):
+        tol = self.grab_px / self.zoom  # a few screen pixels, in frame units
+        for item in reversed(self.items):
+            if item.contains(px, py, tol):
                 return item
         return None
 
@@ -1007,10 +1186,12 @@ class ComposeMode(CanvasView):
         self.request_redraw()  # redo the last frame at full resample quality
 
     def on_wheel(self, event, delta: int | None = None) -> None:
-        """Wheel resizes the active photo; with Ctrl (or nothing active) it zooms."""
+        """Wheel resizes the active item; Ctrl+wheel is its thickness, else zoom."""
         step = delta if delta is not None else event.delta
         ctrl = bool(event.state & 0x0004)
-        if self.active is not None and not ctrl:
+        if ctrl and isinstance(self.active, Shape):
+            self.step_shape_thickness(step > 0)
+        elif self.active is not None and not ctrl:
             self.scale_item(1.1 if step > 0 else 1 / 1.1, anchor=self.to_image(event.x, event.y))
         else:
             self.set_zoom(self.zoom * (1.15 if step > 0 else 1 / 1.15), anchor=(event.x, event.y))
@@ -1044,6 +1225,30 @@ class ComposeMode(CanvasView):
         tile = item.image.crop((sx0, sy0, sx1, sy1)).resize((tw, th), filt)
         return tile.convert("RGB"), (int(round(dx0 + sx0 * sc)), int(round(dy0 + sy0 * sc)))
 
+    def _draw_shape(self, shape: Shape) -> None:
+        """Stroke a shape as canvas items.
+
+        Like the grid in grid mode, this is drawn rather than baked: a 4 px
+        outline in a frame shown at 20% would otherwise disappear. The stroke
+        runs inwards from the box, matching `draw_shape` in the saved file, so
+        the canvas coordinates sit half a stroke inside it.
+        """
+        width = max(1, round(shape.thickness * self.zoom))
+        x0, y0 = self.to_canvas(shape.x, shape.y)
+        x1, y1 = self.to_canvas(shape.x + shape.w, shape.y + shape.h)
+        inset = width / 2
+        x0, y0, x1, y1 = x0 + inset, y0 + inset, x1 - inset, y1 - inset
+        if x1 < x0 or y1 < y0:  # thicker than the shape is wide: a solid blob
+            x0, y0, x1, y1 = self.to_canvas(shape.x, shape.y) + self.to_canvas(
+                shape.x + shape.w, shape.y + shape.h
+            )
+            width = 1
+        color = "#%02x%02x%02x" % shape.color
+        if shape.kind == "circle":
+            self.canvas.create_oval(x0, y0, x1, y1, outline=color, width=width)
+        else:
+            self.canvas.create_rectangle(x0, y0, x1, y1, outline=color, width=width)
+
     def _render_preview(self, cw: int, ch: int, resample: int) -> Image.Image:
         """Backdrop, white frame, photos - faded wherever they leave the frame."""
         base = Image.new("RGB", (cw, ch), BG_RGB)
@@ -1058,6 +1263,8 @@ class ComposeMode(CanvasView):
         layer = Image.new("RGB", (cw, ch), BG_RGB)
         drawn = Image.new("L", (cw, ch), 0)  # where a photo actually landed
         for item in self.items:
+            if not isinstance(item, Placement):
+                continue  # shapes are canvas items, drawn over this bitmap
             tile = self._tile(item, cw, ch, resample)
             if tile is None:
                 continue
@@ -1082,11 +1289,13 @@ class ComposeMode(CanvasView):
         self.canvas.delete("all")
 
         resample = Image.BILINEAR if self._drag else Image.LANCZOS
+        # Only the photos go into the bitmap, so only they belong in its key.
         key = (
             cw, ch, round(self.offset_x, 2), round(self.offset_y, 2), round(self.zoom, 6),
             self.frame_size, resample,
             tuple(
-                (id(i.image), round(i.x, 2), round(i.y, 2), round(i.scale, 6)) for i in self.items
+                (id(i.image), round(i.x, 2), round(i.y, 2), round(i.scale, 6))
+                for i in self.items if isinstance(i, Placement)
             ),
         )
         if key != self._cache_key:
@@ -1098,6 +1307,10 @@ class ComposeMode(CanvasView):
         fx0, fy0 = self.to_canvas(0, 0)
         fx1, fy1 = self.to_canvas(fw, fh)
         self.canvas.create_rectangle(fx0, fy0, fx1, fy1, outline="#99aadd", width=1)
+        for shape in self.items:
+            if isinstance(shape, Shape):
+                self._draw_shape(shape)
+
         item = self.active
         if item is not None:
             x0, y0, x1, y1 = item.box
@@ -1107,21 +1320,26 @@ class ComposeMode(CanvasView):
                 bx0, by0, bx1, by1, outline="#4ea1ff", width=2, dash=(5, 3)
             )
             w, h = item.size
+            detail = (
+                f"{item.thickness} px outline"
+                if isinstance(item, Shape)
+                else f"{item.scale * 100:.1f}%"
+            )
             self.var_scale.set(
-                f"{item.name} - active\n{item.scale * 100:.1f}% - covers "
-                f"{w:.0f} x {h:.0f} px of the {fw} x {fh} frame"
+                f"{item.name} - active\n{detail} - covers {w:.0f} x {h:.0f} px "
+                f"of the {fw} x {fh} frame"
             )
         elif self.items:
-            self.var_scale.set("No photo active - click the photo to activate it")
+            self.var_scale.set("Nothing active - click a photo or an outline")
         else:
-            self.var_scale.set("Open a photo to place it in the frame")
+            self.var_scale.set("Open a photo, or add a shape, to start")
         self.var_status.set(f"Frame {fw} x {fh} px  -  view zoom {self.zoom * 100:.0f}%")
 
     # ------------------------------------------------------------------ save
 
     def save_as(self) -> None:
         if not self.items:
-            messagebox.showinfo("Nothing to save", "Place a photo first.", parent=self)
+            messagebox.showinfo("Nothing to save", "Place a photo or a shape first.", parent=self)
             return
         target = filedialog.asksaveasfilename(
             parent=self,

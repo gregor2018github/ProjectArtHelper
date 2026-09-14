@@ -10,7 +10,8 @@ A small desktop tool for preparing drawings, with two modes in one window:
   lines, save a copy with the grid baked in. Replaces doing the same job by
   hand in GIMP before drawing a subject.
 - **Compose mode** — plan a new picture: pick the final frame size, place a
-  photo in it, and move / scale it until the crop works.
+  photo in it, block areas out with hollow rectangles and circles, and move /
+  scale everything until the composition works.
 
 Single user, single developer. Keep it simple — no packaging, no plugin system,
 no config files.
@@ -20,8 +21,9 @@ no config files.
 - [raster_lines.py](raster_lines.py) — the whole program (~1200 lines).
   - Module-level pure functions hold all the maths and are testable without a
     display: `spacing_options`, `default_spacing`, `grid_positions`,
-    `draw_grid` for the grid; `parse_frame_size`, `fit_scale`, `Placement`,
-    `render_composition` for the composition.
+    `draw_grid` for the grid; `parse_frame_size`, `fit_scale`, `Item` with its
+    `Placement` / `Shape` subclasses, `draw_shape` and `render_composition` for
+    the composition.
   - `CanvasView(ttk.Frame)` is the shared sidebar + canvas: zoom, pan, the
     throttled redraw, and the coordinate helpers. Subclasses supply
     `content_size()` (the world they live in) and `render()` — `draw()` itself
@@ -69,9 +71,26 @@ Or double-click [run.bat](run.bat).
   changes. Picking a cell reuses button 1: `on_release` treats a release within
   3 px of the press as a click and anything further as a pan, so dragging is
   unaffected.
-- **Compose mode keeps a list of `Placement`s** even though only one photo is
-  placed today — position and scale live on the placement, in frame pixels, so
-  adding more later is a list append rather than a rewrite.
+- **Compose mode keeps one list of `Item`s**: `Placement` (a photo) and `Shape`
+  (a hollow rectangle or ellipse) side by side, ordered back to front. Position
+  and size live on the item in frame pixels. `Item.resize` does the anchored
+  grow/shrink for both; a subclass only says how far it may go (`_limit`) and
+  how to apply it (`_apply`), so the move and the resize stay in step at the
+  stops. Loading a photo replaces the `Placement`s and keeps the shapes.
+- **A shape is grabbed by its outline, never through its middle** (`Shape.
+  contains`), so a shape laid over the photo does not make the photo
+  unclickable. Hit tests take a tolerance, which the view passes as
+  `grab_px / zoom` — a few screen pixels' worth of frame units, so a thin
+  outline stays catchable when zoomed out.
+- **Shapes are drawn as canvas items, photos as a bitmap.** Same reason as the
+  grid: a 4 px outline baked into a 20% preview disappears, and canvas widths
+  clamp to 1 px. That also keeps shapes out of the preview bitmap's cache key,
+  so moving one does not re-render the photo. The stroke runs *inwards* from
+  the item's box in both paths — `ImageDraw`'s `width` does that natively, and
+  `_draw_shape` insets the canvas coordinates by half a stroke to match.
+- **Ctrl+wheel is overloaded**: outline thickness over an active shape, view
+  zoom otherwise. Thickness steps proportionally (`step_thickness`), because
+  1 px at a time is useless on a 4000 px frame.
 - **The spill outside the frame is faded in the preview only.** The visible
   part of each photo is resized once per frame, pasted into a full-canvas
   layer, and split by a frame mask: inside goes down untouched, outside goes
