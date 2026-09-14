@@ -735,8 +735,8 @@ class GridMode(CanvasView):
 
 # The spill outside the frame is desaturated and washed towards a flat grey.
 # Blending towards the dark backdrop instead would bury dark photos completely;
-# a mid grey keeps the cut-off part readable but obviously secondary.
-FADE = 0.5
+# a mid grey leaves the cut-off part as a faint ghost of itself.
+FADE = 0.75
 MUTE_RGB = (120, 120, 120)
 
 
