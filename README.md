@@ -1,14 +1,19 @@
 # Raster Lines
 
-A small desktop tool that draws a reference grid onto a photo, so you can
-sketch difficult subjects square by square instead of building the grid by hand
-in an image editor.
+A small desktop tool for preparing a drawing. It has two modes, switched with
+the buttons in the top left:
+
+- **Grid mode** draws a reference grid onto a photo, so you can sketch
+  difficult subjects square by square instead of building the grid by hand in
+  an image editor.
+- **Compose mode** plans a new picture: you set the final frame size, drop a
+  photo into it, and move and scale it until the crop is right.
 
 ![The app showing a 125 px red raster over a drawing](examples/screenshot.png)
 
 *A 125 px raster (8 x 16 cells) over a 1000 x 2000 px drawing, 4 px lines.*
 
-## Features
+## Grid mode
 
 - Pick any `.png` / `.jpg` / `.jpeg` / `.bmp` / `.tif` / `.webp`; the file
   dialog opens on your Desktop.
@@ -24,6 +29,27 @@ in an image editor.
 - Live preview with mouse-wheel zoom (anchored at the cursor) and drag to pan.
 - Saves a copy in the original format, with the save dialog opening in the
   folder the photo came from.
+
+## Compose mode
+
+- Choose the final frame size from the presets — 2000 x 2000, 4000 x 2000,
+  2000 x 4000, 4000 x 3000, 3000 x 4000 — or type your own, e.g. `3500 x 2400`
+  (`3500:2400` and `3500x2400` work too).
+- The photo you opened is dropped into the frame, scaled to fit and centred.
+- **Left-click the photo to activate it.** While it is active:
+  - the mouse wheel resizes it, anchored at the cursor,
+  - `+` / `-` resize it around its own centre,
+  - dragging moves it, and the arrow keys nudge it a screen pixel at a time
+    (ten with Shift),
+  - `Delete` removes it.
+- Click the backdrop to deactivate. With nothing active the wheel zooms the
+  view instead; `Ctrl`+wheel always zooms the view, active photo or not.
+- **Fit in** / **Fill** / **Centre** place the photo against the frame in one
+  click.
+- Whatever hangs over the frame edge is drawn grey and washed out, so the part
+  that actually makes it into the picture stays obvious.
+- **Save frame as…** writes exactly the frame — frame-sized, everything outside
+  it cropped away, white behind anything the photo does not cover.
 
 ## Requirements
 
@@ -45,7 +71,8 @@ python -m venv .venv
 
 On Windows you can also double-click `run.bat`.
 
-1. Choose a photo in the file dialog.
+1. Choose a photo in the file dialog (or Cancel and use **Open photo…** in the
+   window; both modes share the photo you open).
 2. Set thickness, spacing and colour in the left panel — the preview updates as
    you type.
 3. Zoom with the mouse wheel or the `-` / `+` / `Fit` / `100%` buttons; drag to
@@ -54,6 +81,9 @@ On Windows you can also double-click `run.bat`.
    cells you want subdivided.
 5. **Save as…** writes a new file, defaulting to `<name>_raster.<same ext>` next
    to the original.
+
+For compose mode, switch with **Compose mode** in the top left, pick a frame
+size, then click the photo and scale it into place.
 
 The preview keeps thin lines at least one screen pixel wide so they remain
 visible when zoomed out; the saved file always uses the exact thickness you

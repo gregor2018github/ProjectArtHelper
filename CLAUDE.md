@@ -4,21 +4,31 @@ Guidance for Claude Code when working in this repository.
 
 ## What this is
 
-A small single-purpose desktop tool: load a photo, overlay a regular grid
-("raster") of coloured lines, and save a copy with the grid baked in. It exists
-to replace doing the same job by hand in GIMP before drawing a subject.
+A small desktop tool for preparing drawings, with two modes in one window:
+
+- **Grid mode** — load a photo, overlay a regular grid ("raster") of coloured
+  lines, save a copy with the grid baked in. Replaces doing the same job by
+  hand in GIMP before drawing a subject.
+- **Compose mode** — plan a new picture: pick the final frame size, place a
+  photo in it, and move / scale it until the crop works.
 
 Single user, single developer. Keep it simple — no packaging, no plugin system,
 no config files.
 
 ## Layout
 
-- [raster_lines.py](raster_lines.py) — the whole program (~300 lines).
-  - Module-level pure functions (`spacing_options`, `default_spacing`,
-    `grid_positions`, `draw_grid`) hold all the grid maths and are testable
-    without a display.
-  - `RasterApp(tk.Tk)` is the single window: settings panel on the left, live
-    preview canvas on the right.
+- [raster_lines.py](raster_lines.py) — the whole program (~1200 lines).
+  - Module-level pure functions hold all the maths and are testable without a
+    display: `spacing_options`, `default_spacing`, `grid_positions`,
+    `draw_grid` for the grid; `parse_frame_size`, `fit_scale`, `Placement`,
+    `render_composition` for the composition.
+  - `CanvasView(ttk.Frame)` is the shared sidebar + canvas: zoom, pan, the
+    throttled redraw, and the coordinate helpers. Subclasses supply
+    `content_size()` (the world they live in) and `draw()`.
+  - `GridMode` and `ComposeMode` subclass it, one per mode.
+  - `RasterApp(tk.Tk)` is the shell: the mode switch across the top, both mode
+    frames built up front and `pack`/`pack_forget`-ed as the mode changes, and
+    the shared "open a photo" action that hands the image to both.
 - [requirements.txt](requirements.txt) — Pillow only; tkinter ships with Python.
 - `.venv/` — local virtual environment (git-ignored).
 - `examples/screenshot.png` — the README screenshot. `.gitignore` excludes
@@ -58,6 +68,24 @@ Or double-click [run.bat](run.bat).
   changes. Picking a cell reuses button 1: `on_release` treats a release within
   3 px of the press as a click and anything further as a pan, so dragging is
   unaffected.
+- **Compose mode keeps a list of `Placement`s** even though only one photo is
+  placed today — position and scale live on the placement, in frame pixels, so
+  adding more later is a list append rather than a rewrite.
+- **The spill outside the frame is faded in the preview only.** The visible
+  part of each photo is resized once per frame, pasted into a full-canvas
+  layer, and split by a frame mask: inside goes down untouched, outside goes
+  down desaturated and blended halfway to a mid grey (`MUTE_RGB`). Blending
+  towards the dark backdrop instead buries dark photos entirely. Saving uses
+  `render_composition()`, which simply crops at the frame edge.
+- **Button 1 in compose mode means "grab what is under it"**: a press on a
+  photo selects and moves it, a press on the backdrop pans the view, and a
+  release within 3 px of a press on the backdrop clears the selection. The
+  wheel scales the active photo (anchored at the cursor) and falls back to view
+  zoom with Ctrl, or when nothing is active.
+- **`fit_to_window` centres the view explicitly.** Grid mode's clamp pins the
+  photo to the canvas, but compose mode deliberately allows panning far outside
+  its frame (`clamp_margin`), so a zoom-only fit would leave the frame
+  off-centre.
 - **Zoom is anchored at the cursor**; the view is stored as an image-space
   offset plus a zoom factor, and only the visible crop is resized per frame, so
   large photos stay responsive. `request_redraw` **throttles** (leaves a
@@ -70,7 +98,15 @@ Or double-click [run.bat](run.bat).
 
 There is no test suite. Verify changes headlessly by importing the pure
 functions, and smoke-test the window by constructing `RasterApp`, calling
-`app.after(...)` to drive zoom/pan, then `app.destroy()`.
+`app.after(...)` to drive zoom/pan, then `app.close()`.
+
+The window has to be real for the canvas to report a usable size, but
+`app.wm_attributes("-alpha", 0.0)` keeps it off the user's screen — do that,
+and always tear the window down in a `finally`, or a failed assertion leaves a
+stray window sitting on their desktop. Mouse handlers only read `x`, `y`,
+`state` and `delta`, so a tiny stand-in object drives them fine. Compose-mode
+rendering can be checked without eyes by calling `_render_preview` and reading
+pixels back.
 
 ## Conventions
 
