@@ -791,6 +791,7 @@ class ComposeMode(CanvasView):
         self.active: Placement | None = None
         self.frame_size: tuple[int, int] = FRAME_PRESETS[3]
         self._item_drag = None
+        self._toggle_off = False
 
         self.var_frame = tk.StringVar(value=format_size(self.frame_size))
         self.var_scale = tk.StringVar(value="Open a photo to place it in the frame")
@@ -970,8 +971,12 @@ class ComposeMode(CanvasView):
         hit = self.item_at(event.x, event.y)
         if hit is None:  # nothing under the cursor: the drag pans the view
             self._item_drag = None
+            self._toggle_off = False
             super().on_press(event)
             return
+        # Pressing the active photo again deactivates it, but only if the press
+        # turns out to be a click: dragging the active photo must still move it.
+        self._toggle_off = hit is self.active
         self.active = hit
         self._item_drag = (event.x, event.y, hit.x, hit.y)
         self._drag = None
@@ -993,9 +998,10 @@ class ComposeMode(CanvasView):
     def on_release(self, event) -> None:
         px, py = self._press
         clicked = abs(event.x - px) < 3 and abs(event.y - py) < 3
-        if clicked and self._item_drag is None:
-            self.active = None  # a click on the backdrop drops the selection
+        if clicked and (self._item_drag is None or self._toggle_off):
+            self.active = None  # clicked the backdrop, or the active photo again
         self._item_drag = None
+        self._toggle_off = False
         self._drag = None
         self.canvas.config(cursor="")
         self.request_redraw()  # redo the last frame at full resample quality
