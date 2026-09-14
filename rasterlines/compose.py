@@ -1,0 +1,234 @@
+"""Composition maths: the frame, the items in it, and the final render.
+
+Pure functions and plain data - importable and testable without a display.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+
+from PIL import Image, ImageDraw
+
+FRAME_PRESETS = (
+    (2000, 2000),
+    (4000, 2000),
+    (2000, 4000),
+    (4000, 3000),
+    (3000, 4000),
+)
+
+MIN_FRAME, MAX_FRAME = 16, 20000
+MIN_SCALE, MAX_SCALE = 0.01, 20.0
+
+
+def format_size(size: tuple[int, int]) -> str:
+    return f"{size[0]} x {size[1]}"
+
+
+def parse_frame_size(text: str) -> tuple[int, int] | None:
+    """Read '4000 x 3000', '4000:3000' or '4000/3000'; None if unusable.
+
+    The combobox stays editable, so anything holding two numbers is fair game.
+    Values outside a sane pixel range are rejected rather than clamped, so the
+    caller can keep the previous frame instead of silently resizing it.
+    """
+    nums = re.findall(r"\d+", text)
+    if len(nums) < 2:
+        return None
+    w, h = int(nums[0]), int(nums[1])
+    if not (MIN_FRAME <= w <= MAX_FRAME and MIN_FRAME <= h <= MAX_FRAME):
+        return None
+    return w, h
+
+
+def fit_scale(iw: int, ih: int, fw: int, fh: int, cover: bool = False) -> float:
+    """Scale that fits an iw x ih photo inside (or, with *cover*, over) a frame."""
+    if iw < 1 or ih < 1:
+        return 1.0
+    pick = max if cover else min
+    return pick(fw / iw, fh / ih)
+
+
+@dataclass
+class Item:
+    """Something sitting in the frame; x / y are its top-left in frame pixels."""
+
+    name: str
+    x: float = 0.0
+    y: float = 0.0
+
+    @property
+    def size(self) -> tuple[float, float]:
+        raise NotImplementedError
+
+    @property
+    def box(self) -> tuple[float, float, float, float]:
+        w, h = self.size
+        return self.x, self.y, self.x + w, self.y + h
+
+    @property
+    def center(self) -> tuple[float, float]:
+        w, h = self.size
+        return self.x + w / 2, self.y + h / 2
+
+    def contains(self, px: float, py: float, tol: float = 0.0) -> bool:
+        """Is (px, py) on this item? *tol* widens the grab area in frame pixels."""
+        x0, y0, x1, y1 = self.box
+        return x0 - tol <= px <= x1 + tol and y0 - tol <= py <= y1 + tol
+
+    def center_in(self, fw: int, fh: int) -> None:
+        w, h = self.size
+        self.x = (fw - w) / 2
+        self.y = (fh - h) / 2
+
+    def resize(self, factor: float, anchor: tuple[float, float] | None = None) -> None:
+        """Grow or shrink, keeping the frame point *anchor* over the same spot.
+
+        Limits belong to the subclass: `_limit` trims the factor to what it can
+        actually take, so the move and the resize stay in step at the stops.
+        """
+        factor = self._limit(factor)
+        if factor == 1.0:
+            return
+        ax, ay = self.center if anchor is None else anchor
+        self.x = ax - (ax - self.x) * factor
+        self.y = ay - (ay - self.y) * factor
+        self._apply(factor)
+
+    def _limit(self, factor: float) -> float:
+        return factor
+
+    def _apply(self, factor: float) -> None:
+        raise NotImplementedError
+
+
+@dataclass
+class Placement(Item):
+    """A photo dropped into the frame."""
+
+    image: Image.Image = None  # type: ignore[assignment]
+    scale: float = 1.0
+
+    @property
+    def size(self) -> tuple[float, float]:
+        return self.image.width * self.scale, self.image.height * self.scale
+
+    def rescale(self, scale: float, anchor: tuple[float, float] | None = None) -> None:
+        """Set an absolute scale, keeping *anchor* over the same pixel."""
+        self.resize(max(MIN_SCALE, min(scale, MAX_SCALE)) / self.scale, anchor)
+
+    def _limit(self, factor: float) -> float:
+        return max(MIN_SCALE, min(self.scale * factor, MAX_SCALE)) / self.scale
+
+    def _apply(self, factor: float) -> None:
+        self.scale *= factor
+
+
+SHAPE_KINDS = ("rectangle", "circle")
+MIN_SHAPE, MAX_SHAPE = 8.0, float(MAX_FRAME * 4)
+MIN_THICKNESS, MAX_THICKNESS = 1, 400
+SHAPE_COLOR = (255, 0, 0)
+
+
+def default_shape_size(frame_size: tuple[int, int]) -> float:
+    """A new shape covers about a third of the frame's short edge."""
+    return max(MIN_SHAPE, min(frame_size) / 3)
+
+
+def default_thickness(frame_size: tuple[int, int]) -> int:
+    """An outline that reads at a glance whatever the frame resolution is."""
+    return max(2, round(min(frame_size) / 200))
+
+
+def step_thickness(thickness: int, grow: bool) -> int:
+    """One notch of the wheel; proportional, so big outlines are not 1 px work."""
+    delta = max(1, round(thickness * 0.25))
+    return max(MIN_THICKNESS, min(thickness + (delta if grow else -delta), MAX_THICKNESS))
+
+
+@dataclass
+class Shape(Item):
+    """A hollow rectangle or ellipse used to block out the composition.
+
+    The box is the outer edge of the stroke and the stroke runs inwards, which
+    is what `ImageDraw`'s `width` does, so preview and saved file agree.
+    """
+
+    kind: str = "rectangle"
+    w: float = 100.0
+    h: float = 100.0
+    thickness: int = 4
+    color: tuple[int, int, int] = SHAPE_COLOR
+
+    @property
+    def size(self) -> tuple[float, float]:
+        return self.w, self.h
+
+    def contains(self, px: float, py: float, tol: float = 0.0) -> bool:
+        """Only the outline counts - the hollow middle belongs to what is under it."""
+        x0, y0, x1, y1 = self.box
+        band = self.thickness + tol
+        if self.kind == "circle":
+            cx, cy = self.center
+            rx, ry = self.w / 2, self.h / 2
+            if _ellipse_ratio(px, py, cx, cy, rx + tol, ry + tol) > 1.0:
+                return False
+            return _ellipse_ratio(px, py, cx, cy, rx - band, ry - band) >= 1.0
+        if not (x0 - tol <= px <= x1 + tol and y0 - tol <= py <= y1 + tol):
+            return False
+        return not (x0 + band < px < x1 - band and y0 + band < py < y1 - band)
+
+    def _limit(self, factor: float) -> float:
+        smallest = min(self.w, self.h)
+        largest = max(self.w, self.h)
+        return max(MIN_SHAPE / smallest, min(factor, MAX_SHAPE / largest))
+
+    def _apply(self, factor: float) -> None:
+        self.w *= factor
+        self.h *= factor
+
+
+def _ellipse_ratio(px: float, py: float, cx: float, cy: float, rx: float, ry: float) -> float:
+    """< 1 inside the ellipse, 1 on it, > 1 outside; a collapsed one holds nothing."""
+    if rx <= 0 or ry <= 0:
+        return float("inf")
+    return ((px - cx) / rx) ** 2 + ((py - cy) / ry) ** 2
+
+
+def draw_shape(draw: ImageDraw.ImageDraw, shape: Shape) -> None:
+    """Stroke one shape at full resolution, inwards from its box."""
+    x0, y0, x1, y1 = (round(v) for v in shape.box)
+    if x1 <= x0 or y1 <= y0:
+        return
+    box = [x0, y0, x1 - 1, y1 - 1]
+    width = max(1, min(shape.thickness, (x1 - x0) // 2 + 1, (y1 - y0) // 2 + 1))
+    if shape.kind == "circle":
+        draw.ellipse(box, outline=shape.color, width=width)
+    else:
+        draw.rectangle(box, outline=shape.color, width=width)
+
+
+def render_composition(
+    frame_size: tuple[int, int],
+    items: list[Item],
+    background: tuple[int, int, int] = (255, 255, 255),
+) -> Image.Image:
+    """Flatten the items into the final frame-sized image.
+
+    Everything outside the frame is simply cropped away - the greyed-out spill
+    is a preview aid, not part of the result. Shapes go on last, matching the
+    preview, where they are canvas items drawn over the photo bitmap.
+    """
+    out = Image.new("RGB", frame_size, background)
+    for item in items:
+        if isinstance(item, Placement):
+            w = max(1, round(item.image.width * item.scale))
+            h = max(1, round(item.image.height * item.scale))
+            layer = item.image.convert("RGBA").resize((w, h), Image.LANCZOS)
+            out.paste(layer, (round(item.x), round(item.y)), layer)
+    draw = ImageDraw.Draw(out)
+    for item in items:
+        if isinstance(item, Shape):
+            draw_shape(draw, item)
+    return out

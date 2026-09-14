@@ -18,20 +18,30 @@ no config files.
 
 ## Layout
 
-- [raster_lines.py](raster_lines.py) — the whole program (~1200 lines).
-  - Module-level pure functions hold all the maths and are testable without a
-    display: `spacing_options`, `default_spacing`, `grid_positions`,
-    `draw_grid` for the grid; `parse_frame_size`, `fit_scale`, `Item` with its
-    `Placement` / `Shape` subclasses, `draw_shape` and `render_composition` for
-    the composition.
-  - `CanvasView(ttk.Frame)` is the shared sidebar + canvas: zoom, pan, the
-    throttled redraw, and the coordinate helpers. Subclasses supply
-    `content_size()` (the world they live in) and `render()` — `draw()` itself
-    belongs to the base, which uses it to honour a pending fit first.
-  - `GridMode` and `ComposeMode` subclass it, one per mode.
-  - `RasterApp(tk.Tk)` is the shell: the mode switch across the top, both mode
-    frames built up front and `pack`/`pack_forget`-ed as the mode changes, and
-    the shared "open a photo" action that hands the image to both.
+- [raster_lines.py](raster_lines.py) — launcher, nothing else. Keeps
+  `python raster_lines.py` and [run.bat](run.bat) working.
+- [rasterlines/](rasterlines/) — the program, split so the maths can be
+  imported without a display:
+  - [common.py](rasterlines/common.py) — file types, colours, the backdrop,
+    `script_dir()`, `load_image()`.
+  - [grid.py](rasterlines/grid.py) — pure grid maths: `spacing_options`,
+    `default_spacing`, `grid_positions`, `cell_at`, `subdivision_lines`,
+    `draw_grid`.
+  - [compose.py](rasterlines/compose.py) — pure composition maths and data:
+    `parse_frame_size`, `fit_scale`, `Item` with its `Placement` / `Shape`
+    subclasses, `draw_shape`, `render_composition`.
+  - [view.py](rasterlines/view.py) — `CanvasView(ttk.Frame)`, the shared
+    sidebar + canvas: zoom, pan, the throttled redraw, the coordinate helpers
+    and the deferred fit. Subclasses supply `content_size()` (the world they
+    live in) and `render()` — `draw()` belongs to the base, which uses it to
+    honour a pending fit first.
+  - [grid_mode.py](rasterlines/grid_mode.py) /
+    [compose_mode.py](rasterlines/compose_mode.py) — one `CanvasView` subclass
+    each: the sidebar, the event handling and the drawing for that mode.
+  - [app.py](rasterlines/app.py) — `RasterApp(tk.Tk)`, the shell: the mode
+    switch across the top, both mode frames built up front and
+    `pack`/`pack_forget`-ed as the mode changes, the shared "open a photo"
+    action that hands the image to both, and `main()`.
 - [requirements.txt](requirements.txt) — Pillow only; tkinter ships with Python.
 - `.venv/` — local virtual environment (git-ignored).
 - `examples/screenshot.png` — the README screenshot. `.gitignore` excludes
@@ -127,9 +137,10 @@ Or double-click [run.bat](run.bat).
 
 ## Testing
 
-There is no test suite. Verify changes headlessly by importing the pure
-functions, and smoke-test the window by constructing `RasterApp`, calling
-`app.after(...)` to drive zoom/pan, then `app.close()`.
+There is no test suite. Verify changes headlessly by importing
+`rasterlines.grid` / `rasterlines.compose` — neither touches tkinter — and
+smoke-test the window by constructing `RasterApp`, calling `app.after(...)` to
+drive zoom/pan, then `app.close()`.
 
 The window has to be real for the canvas to report a usable size, but
 `app.wm_attributes("-alpha", 0.0)` keeps it off the user's screen — do that,

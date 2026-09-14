@@ -99,6 +99,13 @@ The preview keeps thin lines at least one screen pixel wide so they remain
 visible when zoomed out; the saved file always uses the exact thickness you
 chose at full resolution.
 
+## Layout
+
+The launcher is `raster_lines.py`; the program itself lives in the
+`rasterlines/` package — `grid.py` and `compose.py` hold the maths with no
+tkinter in sight, `view.py` the shared canvas, and `grid_mode.py` /
+`compose_mode.py` / `app.py` the interface.
+
 ## License
 
 MIT
