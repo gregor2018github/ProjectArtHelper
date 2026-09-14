@@ -104,7 +104,9 @@ Or double-click [run.bat](run.bat).
   a shape that is not square. Undo is therefore just clearing the list.
 - **Ctrl+wheel is overloaded**: outline thickness over an active shape, view
   zoom otherwise. Thickness steps proportionally (`step_thickness`), because
-  1 px at a time is useless on a 4000 px frame.
+  1 px at a time is useless on a 4000 px frame, and stops at the shape's own
+  `max_thickness` — the stroke that just closes the middle, i.e. a solid shape.
+  Thickening past that would change nothing, so the wheel goes quiet there.
 - **The spill outside the frame is faded in the preview only.** The visible
   part of each photo is resized once per frame, pasted into a full-canvas
   layer, and split by a frame mask: inside goes down untouched, outside goes

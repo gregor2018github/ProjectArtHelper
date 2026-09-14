@@ -138,9 +138,10 @@ class ComposeMode(CanvasView):
         ttk.Label(thick_row, text="line thickness").pack(side="left")
         ttk.Label(
             side,
-            text="Shapes are hollow: grab them by the outline, not the middle, so "
+            text="Shapes start hollow: grab them by the outline, not the middle, so "
                  "the photo underneath stays reachable. Ctrl+wheel over an active "
-                 "shape changes its thickness (and zooms the view otherwise).",
+                 "shape changes its thickness, up to a solid one (and zooms the view "
+                 "otherwise).",
             foreground="#777", wraplength=200,
         ).pack(anchor="w", pady=(0, 8))
 
@@ -288,7 +289,7 @@ class ComposeMode(CanvasView):
         item = self.active
         if not isinstance(item, Shape):
             return
-        item.thickness = step_thickness(item.thickness, grow)
+        item.thickness = step_thickness(item.thickness, grow, cap=item.max_thickness)
         self.request_redraw()
 
     def fit_item(self, cover: bool) -> None:
@@ -515,11 +516,12 @@ class ComposeMode(CanvasView):
                 bx0, by0, bx1, by1, outline="#4ea1ff", width=2, dash=(5, 3)
             )
             w, h = item.size
-            detail = (
-                f"{item.thickness} px outline"
-                if isinstance(item, Shape)
-                else f"{item.scale * 100:.1f}%"
-            )
+            if not isinstance(item, Shape):
+                detail = f"{item.scale * 100:.1f}%"
+            elif item.filled:
+                detail = "filled"
+            else:
+                detail = f"{item.thickness} px outline"
             self.var_scale.set(
                 f"{item.name} - active\n{detail} - covers {w:.0f} x {h:.0f} px "
                 f"of the {fw} x {fh} frame"

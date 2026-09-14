@@ -55,8 +55,10 @@ the buttons in the top left:
 - **Rectangle** / **Circle** drop a hollow shape in the middle of the frame.
   They are outlines only, so you grab them *by the outline*, not through the
   middle — the photo underneath stays reachable. `Ctrl`+wheel (or the `-` / `+`
-  next to **line thickness**) makes the outline thicker or thinner; the wheel
-  alone resizes the shape like anything else.
+  next to **line thickness**) makes the outline thicker or thinner, all the way
+  to a **solid** shape, at which point it stops; the wheel alone resizes the
+  shape like anything else. A filled shape can be grabbed anywhere, since it no
+  longer has a middle to see through.
 - **Fit in** / **Fill** / **Centre** place the photo against the frame in one
   click.
 - Whatever hangs over the frame edge is drawn as a faint grey ghost, so the

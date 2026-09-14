@@ -5,6 +5,7 @@ Pure functions and plain data - importable and testable without a display.
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
 
@@ -127,7 +128,7 @@ class Placement(Item):
 
 SHAPE_KINDS = ("rectangle", "circle")
 MIN_SHAPE, MAX_SHAPE = 8.0, float(MAX_FRAME * 4)
-MIN_THICKNESS, MAX_THICKNESS = 1, 400
+MIN_THICKNESS, MAX_THICKNESS = 1, MAX_FRAME  # the real ceiling is per shape
 SHAPE_COLOR = (255, 0, 0)
 # Eraser brush radius, in screen pixels: the bite should look the same size
 # under the cursor whatever the view zoom is.
@@ -144,10 +145,15 @@ def default_thickness(frame_size: tuple[int, int]) -> int:
     return max(2, round(min(frame_size) / 200))
 
 
-def step_thickness(thickness: int, grow: bool) -> int:
-    """One notch of the wheel; proportional, so big outlines are not 1 px work."""
+def step_thickness(thickness: int, grow: bool, cap: int = MAX_THICKNESS) -> int:
+    """One notch of the wheel; proportional, so big outlines are not 1 px work.
+
+    *cap* is the point where the stroke has closed over the middle and the
+    shape is solid - past that, thickening it would change nothing.
+    """
     delta = max(1, round(thickness * 0.25))
-    return max(MIN_THICKNESS, min(thickness + (delta if grow else -delta), MAX_THICKNESS))
+    ceiling = max(MIN_THICKNESS, min(cap, MAX_THICKNESS))
+    return max(MIN_THICKNESS, min(thickness + (delta if grow else -delta), ceiling))
 
 
 @dataclass
@@ -171,6 +177,16 @@ class Shape(Item):
     @property
     def size(self) -> tuple[float, float]:
         return self.w, self.h
+
+    @property
+    def max_thickness(self) -> int:
+        """The stroke that just closes the middle: any thicker is the same shape."""
+        return max(MIN_THICKNESS, math.ceil(min(self.w, self.h) / 2))
+
+    @property
+    def filled(self) -> bool:
+        """True once the inward stroke has met itself and the shape reads solid."""
+        return 2 * self.thickness >= min(self.w, self.h)
 
     def erase(self, px: float, py: float, radius: float) -> None:
         """Scratch a round bite out of the outline at a frame-space point."""
