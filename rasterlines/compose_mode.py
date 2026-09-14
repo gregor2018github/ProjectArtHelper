@@ -179,8 +179,10 @@ class ComposeMode(CanvasView):
         ttk.Label(
             side,
             text="Scrub over a shape to scratch its outline away - handy for "
-                 "pretending it passes behind the subject. Reset puts back what "
-                 "the active shape lost (or every shape, with none active).",
+                 "pretending it passes behind the subject. With the background "
+                 "active it eats holes in the frame's fill instead, which save "
+                 "out transparent. Reset puts back what the active item lost "
+                 "(or everything, with nothing active).",
             foreground="#777", wraplength=200,
         ).pack(anchor="w", pady=(2, 12))
 
@@ -295,20 +297,28 @@ class ComposeMode(CanvasView):
         self.request_redraw()
 
     def erase_at(self, cx: float, cy: float) -> None:
-        """Take a bite out of every shape under the brush."""
+        """Scrub at a canvas point.
+
+        With the background selected the brush works on it - that is how holes
+        are punched in the frame's fill. Otherwise it bites into every shape it
+        touches, so a shape need not be selected to be scratched.
+        """
         px, py = self.to_image(cx, cy)
         radius = self.eraser_radius
-        for item in self.items:
-            if isinstance(item, Shape) and item.near(px, py, radius):
-                item.erase(px, py, radius)
+        if isinstance(self.active, Background):
+            self.background.erase(px, py, radius)
+        else:
+            for item in self.items:
+                if isinstance(item, Shape) and item.near(px, py, radius):
+                    item.erase(px, py, radius)
         self.request_redraw()
 
     def reset_eraser(self) -> None:
         """Give back what was scratched off: the active shape, or all of them."""
         targets = (
             [self.active]
-            if isinstance(self.active, Shape)
-            else [i for i in self.items if isinstance(i, Shape)]
+            if isinstance(self.active, Shape)  # the background included
+            else [i for i in self.items if isinstance(i, Shape)] + [self.background]
         )
         for shape in targets:
             shape.erased.clear()
