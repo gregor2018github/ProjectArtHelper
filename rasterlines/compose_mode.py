@@ -13,7 +13,10 @@ from PIL import Image, ImageChops, ImageDraw, ImageOps, ImageTk
 
 from .common import BG_RGB, OPEN_FILETYPES, script_dir
 from .compose import (
+    DEFAULT_ERASER_PX,
     FRAME_PRESETS,
+    MAX_ERASER_PX,
+    MIN_ERASER_PX,
     MAX_FRAME,
     MIN_FRAME,
     Item,
@@ -25,6 +28,7 @@ from .compose import (
     format_size,
     parse_frame_size,
     render_composition,
+    shape_mask,
     step_thickness,
 )
 from .view import CanvasView
@@ -52,7 +56,10 @@ class ComposeMode(CanvasView):
         self.frame_size: tuple[int, int] = FRAME_PRESETS[3]
         self._item_drag = None
         self._toggle_off = False
+        self._erasing = False
 
+        self.var_eraser = tk.BooleanVar(value=False)
+        self.var_eraser_size = tk.IntVar(value=DEFAULT_ERASER_PX)
         self.var_frame = tk.StringVar(value=format_size(self.frame_size))
         self.var_scale = tk.StringVar(value="Open a photo to place it in the frame")
         self.var_status = tk.StringVar(value="")
@@ -135,7 +142,28 @@ class ComposeMode(CanvasView):
                  "the photo underneath stays reachable. Ctrl+wheel over an active "
                  "shape changes its thickness (and zooms the view otherwise).",
             foreground="#777", wraplength=200,
-        ).pack(anchor="w", pady=(0, 12))
+        ).pack(anchor="w", pady=(0, 8))
+
+        erase_row = ttk.Frame(side)
+        erase_row.pack(anchor="w", fill="x")
+        ttk.Checkbutton(
+            erase_row, text="Eraser", variable=self.var_eraser, command=self._on_eraser_toggle,
+        ).pack(side="left")
+        ttk.Spinbox(
+            erase_row, from_=MIN_ERASER_PX, to=MAX_ERASER_PX, width=4,
+            textvariable=self.var_eraser_size,
+        ).pack(side="left", padx=(6, 4))
+        ttk.Label(erase_row, text="px").pack(side="left")
+        ttk.Button(side, text="Reset eraser", command=self.reset_eraser).pack(
+            anchor="w", pady=(4, 0)
+        )
+        ttk.Label(
+            side,
+            text="Scrub over a shape to scratch its outline away - handy for "
+                 "pretending it passes behind the subject. Reset puts back what "
+                 "the active shape lost (or every shape, with none active).",
+            foreground="#777", wraplength=200,
+        ).pack(anchor="w", pady=(2, 12))
 
         ttk.Separator(side).pack(fill="x", pady=8)
         zoom_row = ttk.Frame(side)
@@ -219,6 +247,42 @@ class ComposeMode(CanvasView):
         self.active = shape
         self.request_redraw()
 
+    @property
+    def eraser_radius(self) -> float:
+        """Brush radius in frame pixels: a fixed size on screen, whatever the zoom."""
+        try:
+            px = int(self.var_eraser_size.get())
+        except (tk.TclError, ValueError):
+            px = DEFAULT_ERASER_PX
+        return max(MIN_ERASER_PX, min(px, MAX_ERASER_PX)) / max(self.zoom, 1e-6)
+
+    def _on_eraser_toggle(self) -> None:
+        self.canvas.config(cursor="circle" if self.var_eraser.get() else "")
+        self.request_redraw()
+
+    def erase_at(self, cx: float, cy: float) -> None:
+        """Take a bite out of every shape under the brush."""
+        px, py = self.to_image(cx, cy)
+        radius = self.eraser_radius
+        for item in self.items:
+            if isinstance(item, Shape) and item.near(px, py, radius):
+                item.erase(px, py, radius)
+        self.request_redraw()
+
+    def reset_eraser(self) -> None:
+        """Give back what was scratched off: the active shape, or all of them."""
+        targets = (
+            [self.active]
+            if isinstance(self.active, Shape)
+            else [i for i in self.items if isinstance(i, Shape)]
+        )
+        for shape in targets:
+            shape.erased.clear()
+        self.var_status.set(
+            f"Eraser reset on {len(targets)} shape{'' if len(targets) == 1 else 's'}"
+        )
+        self.request_redraw()
+
     def step_shape_thickness(self, grow: bool) -> None:
         """Thicken or thin the active shape's outline."""
         item = self.active
@@ -281,6 +345,12 @@ class ComposeMode(CanvasView):
     def on_press(self, event) -> None:
         self.canvas.focus_set()
         self._press = (event.x, event.y)
+        if self.var_eraser.get():
+            self._item_drag = None
+            self._drag = None
+            self._erasing = True
+            self.erase_at(event.x, event.y)
+            return
         hit = self.item_at(event.x, event.y)
         if hit is None:  # nothing under the cursor: the drag pans the view
             self._item_drag = None
@@ -297,6 +367,9 @@ class ComposeMode(CanvasView):
         self.request_redraw()
 
     def on_drag(self, event) -> None:
+        if self._erasing:
+            self.erase_at(event.x, event.y)
+            return
         if not self._item_drag:
             super().on_drag(event)
             return
@@ -309,6 +382,10 @@ class ComposeMode(CanvasView):
         self.request_redraw()
 
     def on_release(self, event) -> None:
+        if self._erasing:
+            self._erasing = False
+            self.request_redraw()
+            return
         px, py = self._press
         clicked = abs(event.x - px) < 3 and abs(event.y - py) < 3
         if clicked and (self._item_drag is None or self._toggle_off):
@@ -316,7 +393,7 @@ class ComposeMode(CanvasView):
         self._item_drag = None
         self._toggle_off = False
         self._drag = None
-        self.canvas.config(cursor="")
+        self.canvas.config(cursor="circle" if self.var_eraser.get() else "")
         self.request_redraw()  # redo the last frame at full resample quality
 
     def on_wheel(self, event, delta: int | None = None) -> None:
@@ -359,30 +436,6 @@ class ComposeMode(CanvasView):
         tile = item.image.crop((sx0, sy0, sx1, sy1)).resize((tw, th), filt)
         return tile.convert("RGB"), (int(round(dx0 + sx0 * sc)), int(round(dy0 + sy0 * sc)))
 
-    def _draw_shape(self, shape: Shape) -> None:
-        """Stroke a shape as canvas items.
-
-        Like the grid in grid mode, this is drawn rather than baked: a 4 px
-        outline in a frame shown at 20% would otherwise disappear. The stroke
-        runs inwards from the box, matching `draw_shape` in the saved file, so
-        the canvas coordinates sit half a stroke inside it.
-        """
-        width = max(1, round(shape.thickness * self.zoom))
-        x0, y0 = self.to_canvas(shape.x, shape.y)
-        x1, y1 = self.to_canvas(shape.x + shape.w, shape.y + shape.h)
-        inset = width / 2
-        x0, y0, x1, y1 = x0 + inset, y0 + inset, x1 - inset, y1 - inset
-        if x1 < x0 or y1 < y0:  # thicker than the shape is wide: a solid blob
-            x0, y0, x1, y1 = self.to_canvas(shape.x, shape.y) + self.to_canvas(
-                shape.x + shape.w, shape.y + shape.h
-            )
-            width = 1
-        color = "#%02x%02x%02x" % shape.color
-        if shape.kind == "circle":
-            self.canvas.create_oval(x0, y0, x1, y1, outline=color, width=width)
-        else:
-            self.canvas.create_rectangle(x0, y0, x1, y1, outline=color, width=width)
-
     def _render_preview(self, cw: int, ch: int, resample: int) -> Image.Image:
         """Backdrop, white frame, photos - faded wherever they leave the frame."""
         base = Image.new("RGB", (cw, ch), BG_RGB)
@@ -395,7 +448,7 @@ class ComposeMode(CanvasView):
             ImageDraw.Draw(frame_mask).rectangle(rect, fill=255)
 
         layer = Image.new("RGB", (cw, ch), BG_RGB)
-        drawn = Image.new("L", (cw, ch), 0)  # where a photo actually landed
+        drawn = Image.new("L", (cw, ch), 0)  # where a photo or a shape landed
         for item in self.items:
             if not isinstance(item, Placement):
                 continue  # shapes are canvas items, drawn over this bitmap
@@ -405,6 +458,16 @@ class ComposeMode(CanvasView):
             img, pos = tile
             layer.paste(img, pos)
             drawn.paste(Image.new("L", img.size, 255), pos)
+        # Shapes go over the photos, through the same mask, so that the spill
+        # outside the frame fades for them too. `min_width` keeps a thin
+        # outline one screen pixel wide however far out the view is zoomed.
+        origin = (self.offset_x, self.offset_y)
+        for item in self.items:
+            if not isinstance(item, Shape):
+                continue
+            mask = shape_mask(item, (cw, ch), self.zoom, origin, min_width=1)
+            layer.paste(Image.new("RGB", (cw, ch), item.color), (0, 0), mask)
+            drawn = ImageChops.lighter(drawn, mask)
         if not drawn.getbbox():
             return base
 
@@ -423,13 +486,15 @@ class ComposeMode(CanvasView):
         self.canvas.delete("all")
 
         resample = Image.BILINEAR if self._drag else Image.LANCZOS
-        # Only the photos go into the bitmap, so only they belong in its key.
         key = (
             cw, ch, round(self.offset_x, 2), round(self.offset_y, 2), round(self.zoom, 6),
             self.frame_size, resample,
             tuple(
                 (id(i.image), round(i.x, 2), round(i.y, 2), round(i.scale, 6))
-                for i in self.items if isinstance(i, Placement)
+                if isinstance(i, Placement)
+                else (id(i), round(i.x, 2), round(i.y, 2), round(i.w, 2), round(i.h, 2),
+                      i.thickness, len(i.erased))
+                for i in self.items
             ),
         )
         if key != self._cache_key:
@@ -441,10 +506,6 @@ class ComposeMode(CanvasView):
         fx0, fy0 = self.to_canvas(0, 0)
         fx1, fy1 = self.to_canvas(fw, fh)
         self.canvas.create_rectangle(fx0, fy0, fx1, fy1, outline="#99aadd", width=1)
-        for shape in self.items:
-            if isinstance(shape, Shape):
-                self._draw_shape(shape)
-
         item = self.active
         if item is not None:
             x0, y0, x1, y1 = item.box

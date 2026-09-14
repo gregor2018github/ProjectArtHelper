@@ -48,6 +48,10 @@ the buttons in the top left:
 - Clicking the backdrop deactivates it too. With nothing active the wheel zooms
   the view instead, as does `Ctrl`+wheel — except over an active shape, where
   `Ctrl`+wheel sets the outline thickness.
+- **Eraser**: tick it, set a brush size in pixels, and scrub over a shape to
+  scratch its outline away — so a circle can be made to pass *behind* the
+  subject. **Reset eraser** puts back what the active shape lost, or what every
+  shape lost when nothing is active.
 - **Rectangle** / **Circle** drop a hollow shape in the middle of the frame.
   They are outlines only, so you grab them *by the outline*, not through the
   middle — the photo underneath stays reachable. `Ctrl`+wheel (or the `-` / `+`

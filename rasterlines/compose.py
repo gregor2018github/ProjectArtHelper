@@ -6,7 +6,7 @@ Pure functions and plain data - importable and testable without a display.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from PIL import Image, ImageDraw
 
@@ -129,6 +129,9 @@ SHAPE_KINDS = ("rectangle", "circle")
 MIN_SHAPE, MAX_SHAPE = 8.0, float(MAX_FRAME * 4)
 MIN_THICKNESS, MAX_THICKNESS = 1, 400
 SHAPE_COLOR = (255, 0, 0)
+# Eraser brush radius, in screen pixels: the bite should look the same size
+# under the cursor whatever the view zoom is.
+MIN_ERASER_PX, DEFAULT_ERASER_PX, MAX_ERASER_PX = 2, 12, 120
 
 
 def default_shape_size(frame_size: tuple[int, int]) -> float:
@@ -160,10 +163,31 @@ class Shape(Item):
     h: float = 100.0
     thickness: int = 4
     color: tuple[int, int, int] = SHAPE_COLOR
+    # Scratched-out bites, as (u, v, r) fractions of the shape's own box, so
+    # they travel and scale with it. u and v are along w and h; r is measured
+    # against w alone, which keeps the bite round on a non-square shape.
+    erased: list[tuple[float, float, float]] = field(default_factory=list)
 
     @property
     def size(self) -> tuple[float, float]:
         return self.w, self.h
+
+    def erase(self, px: float, py: float, radius: float) -> None:
+        """Scratch a round bite out of the outline at a frame-space point."""
+        if self.w <= 0 or self.h <= 0 or radius <= 0:
+            return
+        self.erased.append(((px - self.x) / self.w, (py - self.y) / self.h, radius / self.w))
+
+    def erase_circles(self) -> list[tuple[float, float, float]]:
+        """The bites in frame coordinates: (centre x, centre y, radius)."""
+        return [
+            (self.x + u * self.w, self.y + v * self.h, r * self.w) for u, v, r in self.erased
+        ]
+
+    def near(self, px: float, py: float, tol: float = 0.0) -> bool:
+        """Is the point anywhere in the shape's box, hollow middle included?"""
+        x0, y0, x1, y1 = self.box
+        return x0 - tol <= px <= x1 + tol and y0 - tol <= py <= y1 + tol
 
     def contains(self, px: float, py: float, tol: float = 0.0) -> bool:
         """Only the outline counts - the hollow middle belongs to what is under it."""
@@ -196,17 +220,51 @@ def _ellipse_ratio(px: float, py: float, cx: float, cy: float, rx: float, ry: fl
     return ((px - cx) / rx) ** 2 + ((py - cy) / ry) ** 2
 
 
-def draw_shape(draw: ImageDraw.ImageDraw, shape: Shape) -> None:
-    """Stroke one shape at full resolution, inwards from its box."""
-    x0, y0, x1, y1 = (round(v) for v in shape.box)
+def shape_mask(
+    shape: Shape,
+    size: tuple[int, int],
+    scale: float = 1.0,
+    origin: tuple[float, float] = (0.0, 0.0),
+    min_width: int = 1,
+) -> Image.Image:
+    """Where *shape* covers pixels, as an L mask of *size*, bites taken out.
+
+    The one drawing path for a shape: the saved file uses it at scale 1, the
+    preview at the view's zoom with the view's origin. `min_width` keeps a thin
+    outline from vanishing when the frame is shown small - the same trick grid
+    mode uses for its lines.
+
+    The stroke runs inwards from the box, so a thick enough one meets in the
+    middle and the shape reads as filled.
+    """
+    mask = Image.new("L", size, 0)
+    ox, oy = origin
+    bx0, by0, bx1, by1 = shape.box
+    x0, y0 = round((bx0 - ox) * scale), round((by0 - oy) * scale)
+    x1, y1 = round((bx1 - ox) * scale), round((by1 - oy) * scale)
     if x1 <= x0 or y1 <= y0:
-        return
+        return mask
+    draw = ImageDraw.Draw(mask)
     box = [x0, y0, x1 - 1, y1 - 1]
-    width = max(1, min(shape.thickness, (x1 - x0) // 2 + 1, (y1 - y0) // 2 + 1))
-    if shape.kind == "circle":
-        draw.ellipse(box, outline=shape.color, width=width)
+    width = max(min_width, round(shape.thickness * scale))
+    if 2 * width >= min(x1 - x0, y1 - y0):
+        # The stroke has closed over the hollow middle: draw it solid, which
+        # also spares ImageDraw a pile of overlapping outline passes.
+        if shape.kind == "circle":
+            draw.ellipse(box, fill=255)
+        else:
+            draw.rectangle(box, fill=255)
+    elif shape.kind == "circle":
+        draw.ellipse(box, outline=255, width=width)
     else:
-        draw.rectangle(box, outline=shape.color, width=width)
+        draw.rectangle(box, outline=255, width=width)
+
+    for cx, cy, radius in shape.erase_circles():
+        ex, ey, er = (cx - ox) * scale, (cy - oy) * scale, radius * scale
+        if er <= 0 or ex + er < 0 or ey + er < 0 or ex - er > size[0] or ey - er > size[1]:
+            continue
+        draw.ellipse([ex - er, ey - er, ex + er, ey + er], fill=0)
+    return mask
 
 
 def render_composition(
@@ -218,7 +276,7 @@ def render_composition(
 
     Everything outside the frame is simply cropped away - the greyed-out spill
     is a preview aid, not part of the result. Shapes go on last, matching the
-    preview, where they are canvas items drawn over the photo bitmap.
+    preview, where they are drawn over the photos for the same reason.
     """
     out = Image.new("RGB", frame_size, background)
     for item in items:
@@ -227,8 +285,11 @@ def render_composition(
             h = max(1, round(item.image.height * item.scale))
             layer = item.image.convert("RGBA").resize((w, h), Image.LANCZOS)
             out.paste(layer, (round(item.x), round(item.y)), layer)
-    draw = ImageDraw.Draw(out)
     for item in items:
         if isinstance(item, Shape):
-            draw_shape(draw, item)
+            out.paste(
+                Image.new("RGB", frame_size, item.color),
+                (0, 0),
+                shape_mask(item, frame_size),
+            )
     return out

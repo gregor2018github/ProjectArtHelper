@@ -92,12 +92,16 @@ Or double-click [run.bat](run.bat).
   unclickable. Hit tests take a tolerance, which the view passes as
   `grab_px / zoom` — a few screen pixels' worth of frame units, so a thin
   outline stays catchable when zoomed out.
-- **Shapes are drawn as canvas items, photos as a bitmap.** Same reason as the
-  grid: a 4 px outline baked into a 20% preview disappears, and canvas widths
-  clamp to 1 px. That also keeps shapes out of the preview bitmap's cache key,
-  so moving one does not re-render the photo. The stroke runs *inwards* from
-  the item's box in both paths — `ImageDraw`'s `width` does that natively, and
-  `_draw_shape` insets the canvas coordinates by half a stroke to match.
+- **`shape_mask()` is the single drawing path for a shape**: the saved file
+  calls it at scale 1, the preview at the view's zoom and origin. Its
+  `min_width` keeps a thin outline one screen pixel wide when zoomed out — the
+  same problem the grid solves by drawing canvas lines, which is why shapes
+  were canvas items until the eraser needed real holes in them. The stroke runs
+  *inwards* from the box, so a thick enough one closes over the middle.
+- **Erased bites are stored on the shape, normalised to its box** (`u`, `v`,
+  `r` as fractions), so they travel and scale with it instead of being burnt
+  into a bitmap. `r` is measured against `w` alone, which keeps a bite round on
+  a shape that is not square. Undo is therefore just clearing the list.
 - **Ctrl+wheel is overloaded**: outline thickness over an active shape, view
   zoom otherwise. Thickness steps proportionally (`step_thickness`), because
   1 px at a time is useless on a 4000 px frame.
