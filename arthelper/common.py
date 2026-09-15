@@ -30,8 +30,12 @@ BG_RGB = (43, 43, 43)
 
 
 def script_dir() -> str:
-    """The folder this script lives in - where the photos are kept."""
-    return str(Path(__file__).resolve().parent)
+    """The project folder - where the photos are kept.
+
+    This module lives in the ``arthelper`` package, so the folder to start a
+    dialog in is its parent, not its own.
+    """
+    return str(Path(__file__).resolve().parent.parent)
 
 
 def load_image(path: str | Path) -> Image.Image:
