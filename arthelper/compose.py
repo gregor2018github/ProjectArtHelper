@@ -12,13 +12,20 @@ from typing import ClassVar
 
 from PIL import Image, ImageDraw
 
+# Landscape and portrait of each ratio, side by side, squarest last.
 FRAME_PRESETS = (
     (2000, 2000),
     (4000, 2000),
     (2000, 4000),
+    (3000, 2000),
+    (2000, 3000),
     (4000, 3000),
     (3000, 4000),
 )
+
+# What a fresh compose mode starts on; named rather than indexed, so the list
+# above can be reordered without quietly moving the default.
+DEFAULT_FRAME = (4000, 3000)
 
 MIN_FRAME, MAX_FRAME = 16, 20000
 MIN_SCALE, MAX_SCALE = 0.01, 20.0

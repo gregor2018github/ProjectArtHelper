@@ -15,6 +15,7 @@ from .common import BG_RGB, OPEN_FILETYPES, script_dir
 from .compose import (
     BACKGROUND_COLOR,
     DEFAULT_ERASER_PX,
+    DEFAULT_FRAME,
     Background,
     FRAME_PRESETS,
     MAX_ERASER_PX,
@@ -63,7 +64,7 @@ class ComposeMode(CanvasView):
         self.active: Item | None = None
         self.background = Background()
         self.shape_color = SHAPE_COLOR  # what the next new shape gets
-        self._frame_size = FRAME_PRESETS[3]
+        self._frame_size = DEFAULT_FRAME
         self.background.fit_frame(self._frame_size)
         self._item_drag = None
         self._toggle_off = False
