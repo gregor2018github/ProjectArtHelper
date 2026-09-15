@@ -97,6 +97,19 @@ class ArtHelperApp(tk.Tk):
             return
         self.set_image(Path(target), image)
 
+    def bring_to_front(self) -> None:
+        """Put the window in front of whatever the user was looking at.
+
+        The photo dialog runs on a throwaway root that dies before this window
+        appears, so Windows has no reason to hand the focus on and the app
+        opens behind the other windows. A momentary -topmost lifts it without
+        pinning it there.
+        """
+        self.lift()
+        self.attributes("-topmost", True)
+        self.after_idle(self.attributes, "-topmost", False)
+        self.focus_force()
+
     def close(self) -> None:
         """Cancel pending redraws so Tk does not fire them on a dead window."""
         for mode in (self.grid_mode, self.compose_mode):
@@ -122,7 +135,9 @@ def main() -> int:
             messagebox.showerror("Could not open image", f"{path}\n\n{exc}")
             return 1
 
-    ArtHelperApp(Path(path) if image is not None else None, image).mainloop()
+    app = ArtHelperApp(Path(path) if image is not None else None, image)
+    app.bring_to_front()
+    app.mainloop()
     return 0
 
 
