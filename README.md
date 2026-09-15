@@ -35,7 +35,11 @@ the buttons in the top left:
 
 - Choose the final frame size from the presets — 2000 x 2000, 4000 x 2000,
   2000 x 4000, 3000 x 2000, 2000 x 3000, 4000 x 3000, 3000 x 4000 — or type
-  your own, e.g. `3500 x 2400` (`3500:2400` and `3500x2400` work too).
+  your own, e.g. `3500 x 2400` (`3500:2400` and `3500x2400` work too). It is
+  always **width first, then height**: the field says so, the dropdown marks
+  each preset landscape / portrait / square, and a thumbnail underneath shows
+  the shape you are about to get, with its ratio (`3 : 2`) and a plain
+  `3000 wide x 2000 high`.
 - The photo you opened is dropped into the frame, scaled to fit and centred,
   with the view zoomed so the frame and the photo both fill the window.
 - **Left-click a photo or a shape to activate it**, and click it again to

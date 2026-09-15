@@ -26,6 +26,7 @@ from .compose import (
     Placement,
     SHAPE_COLOR,
     Shape,
+    describe_size,
     default_shape_size,
     default_thickness,
     fit_scale,
@@ -34,6 +35,7 @@ from .compose import (
     handle_points,
     format_size,
     parse_frame_size,
+    ratio_label,
     render_composition,
     resize_box,
     shape_mask,
@@ -91,17 +93,24 @@ class ComposeMode(CanvasView):
             anchor="w", fill="x", pady=(0, 12)
         )
 
-        ttk.Label(side, text="Frame size (px)").pack(anchor="w")
+        ttk.Label(side, text="Frame size: width x height (px)").pack(anchor="w")
         self.frame_box = ttk.Combobox(
-            side, width=20, textvariable=self.var_frame,
-            values=[format_size(s) for s in FRAME_PRESETS],
+            side, width=22, textvariable=self.var_frame,
+            values=[describe_size(s) for s in FRAME_PRESETS],
         )
         self.frame_box.pack(anchor="w", pady=(2, 2))
         self.frame_box.bind("<<ComboboxSelected>>", lambda _e: self.apply_frame_size())
         self.frame_box.bind("<Return>", lambda _e: self.apply_frame_size())
         self.frame_box.bind("<FocusOut>", lambda _e: self.apply_frame_size())
+        self.ratio_canvas = tk.Canvas(
+            side, width=200, height=46, highlightthickness=0,
+            background=ttk.Style().lookup("TFrame", "background") or "#f0f0f0",
+        )
+        self.ratio_canvas.pack(anchor="w", pady=(4, 2))
         ttk.Label(
-            side, text="Pick a preset or type your own, e.g. 3500 x 2400.",
+            side,
+            text="Width first, then height: 3500 x 2400 is a wide frame, "
+                 "2400 x 3500 a tall one.",
             foreground="#777", wraplength=200,
         ).pack(anchor="w", pady=(0, 12))
 
@@ -208,6 +217,8 @@ class ComposeMode(CanvasView):
             anchor="w", pady=(8, 0)
         )
 
+        self.draw_ratio_symbol()
+
         canvas = self.make_canvas()
         for seq in ("<plus>", "<KP_Add>", "<equal>"):
             canvas.bind(seq, lambda _e: self.scale_item(1.1))
@@ -233,6 +244,30 @@ class ComposeMode(CanvasView):
     def frame_size(self, size: tuple[int, int]) -> None:
         self._frame_size = size
         self.background.fit_frame(size)  # the fill always covers exactly the frame
+        self.draw_ratio_symbol()
+
+    def draw_ratio_symbol(self) -> None:
+        """A thumbnail of the frame's proportions, so w x h is visible at a glance."""
+        canvas = getattr(self, "ratio_canvas", None)
+        if canvas is None:
+            return  # called from __init__, before the sidebar was built
+        canvas.delete("all")
+        fw, fh = self.frame_size
+        box_w, box_h = 56, 38  # the space the thumbnail may fill
+        scale = min(box_w / fw, box_h / fh)
+        w, h = max(4, round(fw * scale)), max(4, round(fh * scale))
+        x0, y0 = 2 + (box_w - w) / 2, 4 + (box_h - h) / 2
+        canvas.create_rectangle(
+            x0, y0, x0 + w, y0 + h, outline="#4ea1ff", width=2, fill="#ffffff"
+        )
+        canvas.create_text(
+            box_w + 12, 4, anchor="nw", text=ratio_label(self.frame_size),
+            fill="#333333", font=("Segoe UI", 10, "bold"),
+        )
+        canvas.create_text(
+            box_w + 12, 22, anchor="nw",
+            text=f"{fw} wide x {fh} high", fill="#777777", font=("Segoe UI", 8),
+        )
 
     def content_size(self) -> tuple[int, int]:
         return self.frame_size

@@ -156,6 +156,14 @@ Or double-click [run.bat](run.bat).
   `Spinbox` (which includes the comboboxes) has the focus, where the key
   means "delete a character". Right-click offers the same action on whatever
   is under the cursor, selecting it first.
+- **The frame size says which number is which, three ways over**: the label
+  spells out "width x height", `describe_size()` tags each preset landscape /
+  portrait / square in the dropdown, and `draw_ratio_symbol()` draws a
+  proportional thumbnail with `ratio_label()` under the box. The annotations
+  ride along harmlessly because `parse_frame_size()` only reads the first two
+  numbers, and a chosen preset normalises back to a plain "w x h" in the field.
+  The symbol is redrawn by the `frame_size` setter, which is also called before
+  the sidebar exists, hence the guard in `draw_ratio_symbol`.
 - **Dialogs start in `script_dir()`**, not the desktop or the last folder used:
   the photos live next to the script.
 - **Zoom is anchored at the cursor**; the view is stored as an image-space

@@ -35,6 +35,40 @@ def format_size(size: tuple[int, int]) -> str:
     return f"{size[0]} x {size[1]}"
 
 
+def orientation(size: tuple[int, int]) -> str:
+    """'landscape', 'portrait' or 'square' - which way round a frame is."""
+    w, h = size
+    if w == h:
+        return "square"
+    return "landscape" if w > h else "portrait"
+
+
+def describe_size(size: tuple[int, int]) -> str:
+    """A preset as the dropdown shows it: the numbers plus which way up it is.
+
+    `parse_frame_size` only reads the first two numbers, so the annotation
+    rides along harmlessly and a picked preset normalises back to plain
+    'w x h' in the box.
+    """
+    return f"{format_size(size)}   ({orientation(size)})"
+
+
+def ratio_label(size: tuple[int, int]) -> str:
+    """The frame's aspect ratio in the shortest honest form: '3 : 2', '1.46 : 1'.
+
+    Whole numbers when they stay small - most frames are 4:3 or 3:2 - and a
+    decimal otherwise, since '1001 : 687' tells nobody anything.
+    """
+    w, h = size
+    if w < 1 or h < 1:
+        return "-"
+    g = math.gcd(w, h)
+    rw, rh = w // g, h // g
+    if max(rw, rh) <= 20:
+        return f"{rw} : {rh}"
+    return f"{w / h:.2f} : 1" if w >= h else f"1 : {h / w:.2f}"
+
+
 def parse_frame_size(text: str) -> tuple[int, int] | None:
     """Read '4000 x 3000', '4000:3000' or '4000/3000'; None if unusable.
 
