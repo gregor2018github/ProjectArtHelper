@@ -164,6 +164,15 @@ Or double-click [run.bat](run.bat).
   numbers, and a chosen preset normalises back to a plain "w x h" in the field.
   The symbol is redrawn by the `frame_size` setter, which is also called before
   the sidebar exists, hence the guard in `draw_ratio_symbol`.
+- **The sidebar scrolls when the window is too short for it.** The controls
+  sit in a frame inside a canvas window; the canvas is pinned to the frame's
+  requested width so nothing reflows, and the scrollbar is packed only while
+  the content overflows (and unpacked, scrolled back to the top, once it fits
+  again). The wheel is caught with `bind_all` because a binding on the sidebar
+  frame never sees a wheel over a button inside it; the handler walks up from
+  the widget under the pointer and does nothing unless it reaches *that*
+  view's canvas, which keeps the two modes' handlers and the drawing canvas's
+  own zoom out of each other's way.
 - **Dialogs start in `script_dir()`**, not the desktop or the last folder used:
   the photos live next to the script.
 - **Zoom is anchored at the cursor**; the view is stored as an image-space

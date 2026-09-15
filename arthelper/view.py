@@ -35,15 +35,80 @@ class CanvasView(ttk.Frame):
         self._drag = None
         self._press = (0, 0)
         self._redraw_job = None
+        self._sidebar_holder: tk.Canvas | None = None
         self._pending_fit = False
         self._fit_size: tuple[int, int] | None = None
 
     # ---------------------------------------------------------------- widgets
 
     def make_sidebar(self) -> ttk.Frame:
-        side = ttk.Frame(self, padding=12)
-        side.pack(side="left", fill="y")
+        """The controls column, which scrolls when the window is too short.
+
+        The controls go in a frame held inside a canvas window rather than
+        packed straight into the mode: the canvas keeps the frame at its
+        natural width so nothing reflows, and the scrollbar appears only once
+        the controls no longer fit, so a tall enough window looks unchanged.
+        """
+        outer = ttk.Frame(self)
+        outer.pack(side="left", fill="y")
+        holder = tk.Canvas(
+            outer, highlightthickness=0, takefocus=0, width=1,
+            background=ttk.Style().lookup("TFrame", "background") or "#f0f0f0",
+        )
+        holder.pack(side="left", fill="y", expand=True)
+        bar = ttk.Scrollbar(outer, orient="vertical", command=holder.yview)
+        holder.configure(yscrollcommand=bar.set)
+
+        side = ttk.Frame(holder, padding=12)
+        window = holder.create_window(0, 0, window=side, anchor="nw")
+
+        def sync(_event=None) -> None:
+            """Match the canvas to the controls, and show the bar if needed."""
+            want = side.winfo_reqwidth()
+            holder.configure(width=want, scrollregion=(0, 0, want, side.winfo_reqheight()))
+            holder.itemconfigure(window, width=max(holder.winfo_width(), want))
+            if side.winfo_reqheight() > holder.winfo_height():
+                if not bar.winfo_ismapped():
+                    bar.pack(side="right", fill="y")
+            elif bar.winfo_ismapped():
+                bar.pack_forget()
+                holder.yview_moveto(0)  # nothing is hidden, so start from the top
+
+        side.bind("<Configure>", sync)
+        holder.bind("<Configure>", sync)
+        self._sidebar_holder = holder
+        self.bind_all("<MouseWheel>", self._on_sidebar_wheel, add="+")
+        self.bind_all("<Button-4>", lambda e: self._on_sidebar_wheel(e, delta=120), add="+")
+        self.bind_all("<Button-5>", lambda e: self._on_sidebar_wheel(e, delta=-120), add="+")
         return side
+
+    def _on_sidebar_wheel(self, event, delta: int | None = None) -> str | None:
+        """Scroll the sidebar the pointer is actually over, and nothing else.
+
+        The wheel has to be caught application-wide: bindings do not travel up
+        to a parent frame, so a wheel over a button inside the sidebar would
+        otherwise reach no one. Walking up from the widget under the pointer
+        keeps the event with the right sidebar - the other mode's copy of this
+        handler sees the same event and does nothing, as does a wheel over a
+        drawing canvas, which has already zoomed by the time we are called.
+        """
+        holder = getattr(self, "_sidebar_holder", None)
+        if holder is None or str(holder.cget("scrollregion")) == "":
+            return None
+        widget = event.widget
+        while widget is not None:
+            if widget is holder:
+                if holder.winfo_height() >= self._sidebar_height():
+                    return None  # it all fits; there is nothing to scroll
+                step = delta if delta is not None else event.delta
+                holder.yview_scroll(-1 if step > 0 else 1, "units")
+                return "break"
+            widget = getattr(widget, "master", None)
+        return None
+
+    def _sidebar_height(self) -> int:
+        region = self._sidebar_holder.cget("scrollregion").split()
+        return int(float(region[3])) if len(region) == 4 else 0
 
     def make_canvas(self) -> tk.Canvas:
         self.canvas = tk.Canvas(self, background=BG, highlightthickness=0, takefocus=1)
