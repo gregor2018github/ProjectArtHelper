@@ -320,10 +320,39 @@ def straighten(
     warped = image.convert("RGB").transform(
         (out_w, out_h), Image.PERSPECTIVE, perspective_coeffs(src, dst), Image.BICUBIC
     )
-    m = int(round(inset * width))
-    if m <= 0 or 2 * m >= min(out_w, out_h):
+    m = _trim(inset, width, out_w, out_h)
+    if m == 0:
         return warped
     return warped.crop((m, m, out_w - m, out_h - m))
+
+
+def _trim(inset: float, width: float, out_w: int, out_h: int) -> int:
+    """Pixels `straighten` cuts off each edge; 0 when the trim would eat it all."""
+    m = int(round(inset * width))
+    return 0 if m <= 0 or 2 * m >= min(out_w, out_h) else m
+
+
+def photo_to_result(corners: Corners, settings: ScanSettings) -> np.ndarray:
+    """3x3 homography taking a photo pixel to the same spot in the result.
+
+    The same mapping `straighten` warps by (corners to the paper rectangle),
+    followed by the trim, so the loupe can show the cleaned version of
+    whatever is under the pointer in the photo. The tone steps do not move
+    anything, so they do not enter into it.
+    """
+    width, height = straighten_size(corners, settings.ratio)
+    rect = ((0.0, 0.0), (width, 0.0), (width, height), (0.0, height))
+    a, b, c, d, e, f, g, h = perspective_coeffs(rect, corners)
+    m = _trim(settings.inset, width, max(1, int(round(width))), max(1, int(round(height))))
+    return np.array([[1, 0, -m], [0, 1, -m], [0, 0, 1]]) @ np.array(
+        [[a, b, c], [d, e, f], [g, h, 1.0]]
+    )
+
+
+def map_point(matrix: np.ndarray, x: float, y: float) -> tuple[float, float]:
+    """Apply a 3x3 homography to one point."""
+    u, v, w = matrix @ (x, y, 1.0)
+    return float(u / w), float(v / w)
 
 
 # --------------------------------------------------------------------------- #

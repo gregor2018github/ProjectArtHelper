@@ -9,9 +9,9 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import TYPE_CHECKING
 
-from PIL import Image
+from PIL import Image, ImageTk
 
-from .common import OPEN_FILETYPES, script_dir
+from .common import BG_RGB, OPEN_FILETYPES, script_dir
 from .scan import (
     Corners,
     ScanError,
@@ -19,6 +19,8 @@ from .scan import (
     clean_folder,
     clean_scan,
     detect_corners,
+    map_point,
+    photo_to_result,
     whole_image_corners,
 )
 from .view import CanvasView
@@ -37,6 +39,12 @@ RATIO_CHOICES = [
 ]
 OUTLINE = "#33dd66"
 SETTLE_MS = 350  # wait this long after a settings change before re-processing
+# The loupe: side in screen pixels, and magnification relative to the view, so
+# it always shows more detail than the canvas around it at any zoom.
+LOUPE_SIZE = 240
+LOUPE_ZOOM = 3.0
+LOUPE_SIZE_RANGE = (100, 600)
+LOUPE_ZOOM_RANGE = (1.0, 12.0)
 
 
 class ScanMode(CanvasView):
@@ -44,9 +52,11 @@ class ScanMode(CanvasView):
 
     Two views of one job: *Photo* shows the original with the paper corners as
     draggable handles (detection is a starting point, not the last word), and
-    *Result* shows what will be saved. The result is worked out only when it
-    is looked at or saved, and kept until the photo, corners or settings
-    change.
+    *Result* shows what will be saved. A loupe follows the pointer in either
+    view and shows the cleaned version of the spot underneath, magnified, so
+    the photo view doubles as a before / after comparison. The result is
+    worked out only when it is looked at, needed by the loupe or saved, and
+    kept until the photo, corners or settings change.
     """
 
     handle_px = 9  # grab radius of a corner handle, in screen pixels
@@ -63,7 +73,14 @@ class ScanMode(CanvasView):
         self._grab_offset = (0.0, 0.0)  # handle centre minus press point, on screen
         self._settle_job = None
 
+        self._result_map = None  # photo -> result homography for the cached result
+        self._pointer: tuple[int, int] | None = None  # last canvas position, or None outside
+        self._loupe_photo: ImageTk.PhotoImage | None = None
+
         self.var_view = tk.StringVar(value="photo")
+        self.var_loupe = tk.BooleanVar(value=True)
+        self.var_loupe_size = tk.StringVar(value=str(LOUPE_SIZE))
+        self.var_loupe_zoom = tk.StringVar(value=str(LOUPE_ZOOM))
         self.var_inset = tk.StringVar(value="0.5")
         self.var_white = tk.StringVar(value="250")
         self.var_ratio = tk.StringVar(value=FROM_PHOTO)
@@ -87,13 +104,31 @@ class ScanMode(CanvasView):
         )
 
         ttk.Label(side, text="Show").pack(anchor="w")
-        view_row = ttk.Frame(side)
-        view_row.pack(anchor="w", fill="x", pady=(2, 12))
-        for value, label in (("photo", "Photo + corners"), ("result", "Result")):
+        for value, label in (("photo", "Original photo (with corners)"), ("result", "Cleaned result")):
             ttk.Radiobutton(
-                view_row, text=label, value=value, variable=self.var_view,
-                style="Toolbutton", command=self._on_view_change,
-            ).pack(side="left", padx=(0, 4))
+                side, text=label, value=value, variable=self.var_view,
+                command=self._on_view_change,
+            ).pack(anchor="w", pady=(2, 0))
+
+        ttk.Checkbutton(
+            side, text="Loupe (shows the cleaned version)", variable=self.var_loupe,
+        ).pack(anchor="w", pady=(8, 2))
+        loupe_row = ttk.Frame(side)
+        loupe_row.pack(anchor="w", pady=(0, 12))
+        ttk.Label(loupe_row, text="Size").pack(side="left")
+        ttk.Spinbox(
+            loupe_row, from_=LOUPE_SIZE_RANGE[0], to=LOUPE_SIZE_RANGE[1], increment=20,
+            width=5, textvariable=self.var_loupe_size,
+        ).pack(side="left", padx=(4, 2))
+        ttk.Label(loupe_row, text="px").pack(side="left")
+        ttk.Label(loupe_row, text="Zoom").pack(side="left", padx=(12, 0))
+        ttk.Spinbox(
+            loupe_row, from_=LOUPE_ZOOM_RANGE[0], to=LOUPE_ZOOM_RANGE[1], increment=0.5,
+            width=4, textvariable=self.var_loupe_zoom,
+        ).pack(side="left", padx=(4, 2))
+        ttk.Label(loupe_row, text="x").pack(side="left")
+        for var in (self.var_loupe, self.var_loupe_size, self.var_loupe_zoom):
+            var.trace_add("write", lambda *_: self._draw_loupe())
 
         ttk.Label(side, text="Paper corners").pack(anchor="w")
         corner_row = ttk.Frame(side)
@@ -103,7 +138,7 @@ class ScanMode(CanvasView):
             side="left", padx=(4, 0)
         )
         ttk.Label(
-            side, text="Drag a handle in the photo view to move a corner.",
+            side, text="Drag a white handle to move a corner.",
             foreground="#777", wraplength=210,
         ).pack(anchor="w", pady=(2, 2))
         ttk.Label(
@@ -114,15 +149,16 @@ class ScanMode(CanvasView):
         ratio_box = ttk.Combobox(side, width=24, textvariable=self.var_ratio, values=RATIO_CHOICES)
         ratio_box.pack(anchor="w", pady=(2, 12))
 
-        ttk.Label(side, text="Trim each edge (% of width)").pack(anchor="w")
+        tone_row = ttk.Frame(side)
+        tone_row.pack(anchor="w", pady=(0, 12))
+        ttk.Label(tone_row, text="Trim edges (%)").grid(row=0, column=0, sticky="w")
+        ttk.Label(tone_row, text="Paper white").grid(row=0, column=1, sticky="w", padx=(16, 0))
         ttk.Spinbox(
-            side, from_=0, to=10, increment=0.1, width=10, textvariable=self.var_inset,
-        ).pack(anchor="w", pady=(2, 12))
-
-        ttk.Label(side, text="Paper white (0-255)").pack(anchor="w")
+            tone_row, from_=0, to=10, increment=0.1, width=7, textvariable=self.var_inset,
+        ).grid(row=1, column=0, sticky="w", pady=(2, 0))
         ttk.Spinbox(
-            side, from_=150, to=255, increment=1, width=10, textvariable=self.var_white,
-        ).pack(anchor="w", pady=(2, 12))
+            tone_row, from_=150, to=255, increment=1, width=7, textvariable=self.var_white,
+        ).grid(row=1, column=1, sticky="w", padx=(16, 0), pady=(2, 0))
 
         for text, var in (
             ("Even out the lighting", self.var_lighting),
@@ -155,6 +191,7 @@ class ScanMode(CanvasView):
 
         self.make_canvas()
         self.canvas.bind("<Motion>", self._on_motion)
+        self.canvas.bind("<Leave>", self._on_leave)
 
     # ----------------------------------------------------------------- image
 
@@ -253,9 +290,21 @@ class ScanMode(CanvasView):
         self._on_motion(event)
 
     def _on_motion(self, event) -> None:
+        self._pointer = (event.x, event.y)
         if self._drag or self._corner_drag is not None:
             return
-        self.canvas.config(cursor="hand2" if self.corner_at(event.x, event.y) is not None else "")
+        if self.corner_at(event.x, event.y) is not None:
+            cursor = "hand2"
+        elif self._loupe_wanted():
+            cursor = "crosshair"
+        else:
+            cursor = ""
+        self.canvas.config(cursor=cursor)
+        self._draw_loupe()
+
+    def _on_leave(self, _event) -> None:
+        self._pointer = None
+        self.canvas.delete("loupe")
 
     # -------------------------------------------------------------- settings
 
@@ -306,6 +355,7 @@ class ScanMode(CanvasView):
             top.update_idletasks()
             try:
                 self._result = clean_scan(self.image, self.corners, settings)
+                self._result_map = photo_to_result(self.corners, settings)
             except ScanError as exc:
                 self._result_error = str(exc)
             except Exception as exc:  # noqa: BLE001 - show it rather than lose it
@@ -326,6 +376,7 @@ class ScanMode(CanvasView):
             self._render_result()
         else:
             self._render_photo()
+        self._draw_loupe()  # render wiped the canvas; put it back under the pointer
 
     def _render_photo(self) -> None:
         self.clamp_offsets()
@@ -355,6 +406,83 @@ class ScanMode(CanvasView):
         self.show_image(result)
         w, h = result.size
         self.var_status.set(f"Result {w} x {h} px  -  zoom {self.zoom * 100:.0f}%")
+
+    # ----------------------------------------------------------------- loupe
+
+    @property
+    def loupe_size(self) -> int:
+        return int(_number(self.var_loupe_size.get(), LOUPE_SIZE, *LOUPE_SIZE_RANGE))
+
+    @property
+    def loupe_zoom(self) -> float:
+        return _number(self.var_loupe_zoom.get(), LOUPE_ZOOM, *LOUPE_ZOOM_RANGE)
+
+    def _loupe_wanted(self) -> bool:
+        """Whether the loupe belongs under the pointer right now.
+
+        Not while a drag is moving the view or a corner (it would chase the
+        pointer and re-process mid-drag), and not over a corner handle, which
+        it would otherwise cover just as the user reaches for it.
+        """
+        if not self.var_loupe.get() or self.image is None or self._pointer is None:
+            return False
+        if self._drag or self._corner_drag is not None:
+            return False
+        return self.corner_at(*self._pointer) is None
+
+    def _loupe_source(self) -> tuple[Image.Image, float, float] | None:
+        """The cleaned image and the point in it that is under the pointer.
+
+        In the photo view the point goes through the same perspective mapping
+        as the clean-up. While a settings change is still settling, the
+        previous result stands in rather than re-processing on every move.
+        """
+        if self._settle_job is not None and self._result is not None:
+            result = self._result
+        else:
+            result = self.result()
+        if result is None:
+            return None
+        x, y = self.to_image(*self._pointer)
+        if self.var_view.get() == "photo":
+            x, y = map_point(self._result_map, x, y)
+        return result, x, y
+
+    def _draw_loupe(self) -> None:
+        """Magnify the cleaned version of what is under the pointer.
+
+        A square of `loupe_size` screen pixels centred on the pointer, at
+        `loupe_zoom` times the view's own zoom, with a small crosshair marking
+        the exact spot. It is canvas chrome (tag ``loupe``), so moving the
+        pointer redraws only the loupe and never the whole view.
+        """
+        self.canvas.delete("loupe")
+        if not self._loupe_wanted():
+            return
+        source = self._loupe_source()
+        if source is None:
+            return
+        result, x, y = source
+        size = self.loupe_size
+        scale = self.zoom * self.loupe_zoom  # screen pixels per result pixel
+        half = size / 2 / scale
+        resample = Image.NEAREST if scale >= 3 else Image.BICUBIC
+        crop = result.transform(
+            (size, size), Image.EXTENT, (x - half, y - half, x + half, y + half),
+            resample, fillcolor=BG_RGB,
+        )
+        self._loupe_photo = ImageTk.PhotoImage(crop)
+
+        cx, cy = self._pointer
+        x0, y0 = cx - size / 2, cy - size / 2
+        c = self.canvas
+        c.create_image(cx, cy, image=self._loupe_photo, tags="loupe")
+        c.create_rectangle(x0 - 1, y0 - 1, x0 + size + 1, y0 + size + 1,
+                           outline="#000", width=3, tags="loupe")
+        c.create_rectangle(x0, y0, x0 + size, y0 + size, outline="#fff", width=1, tags="loupe")
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):  # crosshair with an open centre
+            c.create_line(cx + 4 * dx, cy + 4 * dy, cx + 12 * dx, cy + 12 * dy,
+                          fill=OUTLINE, width=2, tags="loupe")
 
     # ------------------------------------------------------------------ save
 

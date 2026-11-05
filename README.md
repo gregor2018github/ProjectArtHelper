@@ -94,12 +94,15 @@ with the buttons in the top left:
 - Open a photo of a drawing lying on a table. The sheet is found
   automatically by its lack of colour (paper is nearly grey, wood or cloth is
   not), so a coloured, reasonably plain background works best.
-- **Photo + corners** shows the photo with the four detected paper corners.
+- **Show** switches between the **original photo (with corners)** and the
+  **cleaned result**.
+- The **original photo** view shows the four detected paper corners.
   If one is off, drag its handle to the right spot; **Detect again** goes back
   to the automatic guess and **Whole photo** puts the corners on the photo's
   own edges. When detection fails outright the corners start at the edges and
   the sidebar says why.
-- **Result** shows what will be saved: the sheet squared up and cropped, with
+- The **cleaned result** view shows what will be saved: the sheet squared up
+  and cropped, with
   - **Even out the lighting**: the paper becomes one even, neutral white,
     however the light fell on it,
   - **Even out the blacks**: ink that glare turned grey in places is brought
@@ -107,6 +110,13 @@ with the buttons in the top left:
   - **Make the darkest ink black**: a final contrast stretch.
 
   Each step can be switched off.
+- The **loupe** follows the pointer and shows the cleaned version of the spot
+  underneath, magnified. Over the original photo that makes a before / after
+  comparison right where you look; over the result it is a plain magnifier.
+  Set its **Size** (240 px to start with) and **Zoom** (3x to start with,
+  relative to the view, so it always shows more than the canvas around it)
+  under the checkbox, or untick it. It steps aside over a corner handle and
+  while you drag.
 - **Paper shape** fixes the long : short ratio when you know it: `1.414` for
   A4 / A3, or type `3:2`, `297 x 210` and so on. Left at *From the photo* the
   ratio is measured, which is a little less exact when the photo is taken at

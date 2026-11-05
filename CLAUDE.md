@@ -203,9 +203,20 @@ Or double-click [run.bat](run.bat).
   a failed detection falls back to the photo's own edges with the reason in
   the sidebar rather than an error box.
 - **The scan result is lazy and cached** on (image, corners, `ScanSettings`):
-  it is computed only in the Result view or on save, and settings changes are
-  settled for `SETTLE_MS` before re-processing, since a large photo takes a
-  second or so. The photo view never triggers processing.
+  it is computed only in the Result view, by the loupe or on save, and
+  settings changes are settled for `SETTLE_MS` before re-processing, since a
+  large photo takes a second or so. While a change is settling the loupe
+  keeps showing the previous result rather than re-processing on every move.
+- **The loupe maps through the clean-up's own geometry.** `photo_to_result()`
+  is the homography `straighten` warps by plus the trim (both share `_trim`,
+  so they cannot drift apart); the tone steps move nothing. The cached result
+  carries its matrix in `_result_map`. The loupe is canvas chrome tagged
+  `loupe`: pointer motion redraws only it, `render` puts it back after wiping
+  the canvas, and `_loupe_wanted` hides it during drags and over a corner
+  handle, which it would otherwise cover just as the user reaches for it. Its
+  zoom is relative to the view (`zoom * loupe_zoom`), so it magnifies at any
+  view zoom; crops come from `Image.transform(EXTENT)` with the backdrop as
+  fill, so the edge of the paper needs no special case.
 - **Dialogs start in `script_dir()`**, not the desktop or the last folder used:
   the photos live next to the script.
 - **Zoom is anchored at the cursor**; the view is stored as an image-space
