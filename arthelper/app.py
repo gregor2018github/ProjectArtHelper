@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import os
 import sys
 import tkinter as tk
+import traceback
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from PIL import Image
 
-from .common import OPEN_FILETYPES, load_image, script_dir
+from . import smoke
+from .common import FROZEN, OPEN_FILETYPES, load_image, script_dir
 from .compose_mode import ComposeMode
 from .grid_mode import GridMode
 from .scan_mode import ScanMode
@@ -153,7 +156,44 @@ class ArtHelperApp(tk.Tk):
         self.destroy()
 
 
+def write_crash_log(text: str) -> Path:
+    """Put *text* in crash.log next to ArtHelper.exe and say where it went."""
+    path = Path(script_dir()) / "crash.log"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def report_crash(text: str, *, show: bool = True) -> None:
+    """Released exe only: there is no console, so a traceback needs a home."""
+    try:
+        path = write_crash_log(text)
+        where = f"The details are in\n{path}"
+    except OSError:
+        where = text
+    if show:
+        messagebox.showerror("Art Helper ran into an error", where)
+
+
+def _report_callback_exception(_widget: tk.Misc, *exc) -> None:
+    report_crash("".join(traceback.format_exception(*exc)))
+
+
 def main() -> int:
+    """Start Art Helper; in the released exe, errors end up in crash.log."""
+    smoke_seconds = os.environ.get(smoke.ENV)
+    if FROZEN:
+        tk.Tk.report_callback_exception = _report_callback_exception  # type: ignore[method-assign]
+    try:
+        return smoke.run(float(smoke_seconds)) if smoke_seconds else run()
+    except Exception:
+        if not FROZEN:
+            raise
+        report_crash(traceback.format_exc(), show=not smoke_seconds)
+        return 1
+
+
+def run() -> int:
+    """Splash, photo dialog, then the window until it is closed."""
     root = tk.Tk()
     root.withdraw()
     set_app_icon(root)

@@ -1,0 +1,35 @@
+# Push a tag like v0.1.0 to publish ArtHelper-0.1.0-windows.zip
+# (ArtHelper.exe, needs nothing installed) as a GitHub release.
+# build_tools/Release/build_release.py does the work; see its docstring.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Build and publish the Windows zip
+    # PyInstaller builds only for the OS it runs on.
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          # ArtHelper.exe bundles this interpreter (the home PC's version).
+          python-version: "3.13"
+      - name: Build (and smoke-test ArtHelper.exe)
+        run: python build_tools/Release/build_release.py "${GITHUB_REF_NAME#v}"
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" release/ArtHelper-*-windows.zip \
+            --title "Art Helper ${GITHUB_REF_NAME#v}" \
+            --notes "Download ArtHelper-${GITHUB_REF_NAME#v}-windows.zip, extract it and double-click ArtHelper.exe. Nothing needs to be installed. If Windows says it protected your PC, click More info, then Run anyway."

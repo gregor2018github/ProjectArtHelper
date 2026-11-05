@@ -133,6 +133,17 @@ with the buttons in the top left:
   you choose, and lists any photo it could not handle. Open those one at a
   time and place the corners by hand.
 
+## Download (Windows)
+
+Get `ArtHelper-<version>-windows.zip` from the
+[latest release](https://github.com/gregor2018github/ProjectArtHelper/releases/latest),
+extract it anywhere and double-click `ArtHelper.exe` in the `ArtHelper` folder.
+Nothing needs to be installed. The program is not signed, so the first start
+may bring up "Windows protected your PC": click **More info**, then **Run
+anyway**. Keep the exe and its `_internal` folder together.
+
+To run it from the source instead, read on.
+
 ## Requirements
 
 - Python 3.10+ with tkinter (included in the standard Windows installer)
@@ -185,6 +196,10 @@ The launcher is `art_helper.py`; the program itself lives in the
 with no tkinter in sight, `view.py` the shared canvas, and `grid_mode.py` /
 `compose_mode.py` / `scan_mode.py` / `app.py` the interface. `logo.py` draws
 the logo and its intro animation (also tkinter-free) and `splash.py` plays it.
+
+`build_tools/Release/build_release.py` builds the Windows zip with PyInstaller;
+pushing a tag `v<version>` runs it on GitHub (`.github/workflows/release.yml`)
+and publishes the zip as a release.
 
 ## License
 

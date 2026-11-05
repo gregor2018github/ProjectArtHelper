@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from PIL import Image
@@ -44,12 +45,18 @@ BG = "#2b2b2b"
 BG_RGB = (43, 43, 43)
 
 
+FROZEN = getattr(sys, "frozen", False)  # running as the released ArtHelper.exe
+
+
 def script_dir() -> str:
     """The project folder - where the photos are kept.
 
     This module lives in the ``arthelper`` package, so the folder to start a
-    dialog in is its parent, not its own.
+    dialog in is its parent, not its own. In the released exe it is the folder
+    holding ArtHelper.exe (the package sits out of sight in ``_internal``).
     """
+    if FROZEN:
+        return str(Path(sys.executable).resolve().parent)
     return str(Path(__file__).resolve().parent.parent)
 
 

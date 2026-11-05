@@ -6,3 +6,6 @@ __pycache__/
 
 # ...but the README example is part of the repo
 !examples/*.png
+
+# Release zips: they live only as GitHub release assets
+/release/

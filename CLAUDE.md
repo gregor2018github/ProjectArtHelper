@@ -63,6 +63,16 @@ no config files.
     built up front and `pack`/`pack_forget`-ed as the mode changes, the
     shared "open a photo" action that hands the image to all of them, and
     `main()`.
+  - [smoke.py](arthelper/smoke.py) — the release check: with
+    `ART_HELPER_SMOKE_TEST=<seconds>` set, `main()` skips the splash and the
+    photo dialog and runs this instead (every mode on a made-up photo, a
+    scan clean-up, then quit; any error means exit 1).
+- [build_tools/Release/](build_tools/Release/) — `build_release.py <version>`
+  builds `release/ArtHelper-<version>-windows.zip` (PyInstaller one-folder,
+  windowed, in its own `.venv` there) and smoke-tests the exe.
+  [.github/workflows/release.yml](.github/workflows/release.yml) runs it when a
+  tag `v*` is pushed and publishes the zip as a GitHub release. The
+  `make-release` skill has the steps; only the latest release is kept.
 - [requirements.txt](requirements.txt) — Pillow and numpy; tkinter ships with
   Python. numpy came in with scan mode; OpenCV was deliberately left out.
 - `.venv/` — local virtual environment (git-ignored).
@@ -255,7 +265,11 @@ Or double-click [run.bat](run.bat).
   The pending tick / fade job is kept in `_job` and cancelled in `destroy`,
   or closing mid-animation leaves Tk firing it on a dead window.
 - **Dialogs start in `script_dir()`**, not the desktop or the last folder used:
-  the photos live next to the script.
+  the photos live next to the script. In the released exe (`FROZEN`) that is
+  the folder holding `ArtHelper.exe`, not `_internal/`.
+- **The released exe has no console**, so `main()` sends any unhandled error,
+  including one in a Tk callback, to `crash.log` next to the exe and shows a
+  message box. From source, errors still go to the console as before.
 - **Zoom is anchored at the cursor**; the view is stored as an image-space
   offset plus a zoom factor, and only the visible crop is resized per frame, so
   large photos stay responsive. `request_redraw` **throttles** (leaves a

@@ -1,0 +1,3 @@
+# The build venv (build_tools/Release/.venv): the app's packages plus PyInstaller
+-r ../../requirements.txt
+pyinstaller==6.22.3
