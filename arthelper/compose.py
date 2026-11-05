@@ -12,7 +12,14 @@ from typing import ClassVar
 
 from PIL import Image, ImageDraw
 
-# Landscape and portrait of each ratio, side by side, squarest last.
+from .common import PAPER_FORMATS, paper_pixels
+
+# Paper formats as frames at PAPER_DPI, keyed by size so the dropdown can name
+# them: (2480, 3508) -> "A4 portrait".
+PAPER_FRAMES = {paper_pixels(mm): name for name, mm in PAPER_FORMATS.items()}
+
+# Square first, then landscape and portrait of each ratio side by side, then
+# the paper formats.
 FRAME_PRESETS = (
     (2000, 2000),
     (4000, 2000),
@@ -21,6 +28,7 @@ FRAME_PRESETS = (
     (2000, 3000),
     (4000, 3000),
     (3000, 4000),
+    *PAPER_FRAMES,
 )
 
 # What a fresh compose mode starts on; named rather than indexed, so the list
@@ -48,9 +56,10 @@ def describe_size(size: tuple[int, int]) -> str:
 
     `parse_frame_size` only reads the first two numbers, so the annotation
     rides along harmlessly and a picked preset normalises back to plain
-    'w x h' in the box.
+    'w x h' in the box. A paper format is named instead ('A4 portrait').
     """
-    return f"{format_size(size)}   ({orientation(size)})"
+    tag = PAPER_FRAMES.get(tuple(size)) or orientation(size)
+    return f"{format_size(size)}   ({tag})"
 
 
 def ratio_label(size: tuple[int, int]) -> str:

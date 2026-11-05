@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from PIL import Image
 
-from .common import COLORS, OPEN_FILETYPES
+from .common import COLORS, OPEN_FILETYPES, PAPER_FORMATS
 from .grid import (
     SUBDIVISION_FACTORS,
     cell_at,
@@ -18,11 +18,16 @@ from .grid import (
     cells,
     default_spacing,
     draw_grid,
+    format_cm,
     grid_positions,
+    mm_per_px,
+    spacing_from_cm,
     spacing_options,
     subdivision_lines,
 )
 from .view import CanvasView
+
+NO_PAPER = "No paper"
 
 if TYPE_CHECKING:
     from .app import ArtHelperApp
@@ -47,6 +52,8 @@ class GridMode(CanvasView):
         self.var_info = tk.StringVar(value="No photo loaded")
         self.var_subdivide = tk.BooleanVar(value=False)
         self.var_factor = tk.StringVar(value="4x")
+        self.var_paper = tk.StringVar(value=NO_PAPER)
+        self.var_paper_info = tk.StringVar(value="")
         # Cells refined for critical areas (hands, faces): (col, row) -> factor.
         # Cell indices only mean something for one spacing, so a spacing change
         # drops them (see draw).
@@ -65,6 +72,17 @@ class GridMode(CanvasView):
             anchor="w", fill="x", pady=(0, 12)
         )
 
+        ttk.Label(side, text="Paper to draw on").pack(anchor="w")
+        paper_box = ttk.Combobox(
+            side, width=20, textvariable=self.var_paper, state="readonly",
+            values=[NO_PAPER, *PAPER_FORMATS],
+        )
+        paper_box.pack(anchor="w", pady=(2, 2))
+        paper_box.bind("<<ComboboxSelected>>", lambda _e: self._on_paper_change())
+        ttk.Label(
+            side, textvariable=self.var_paper_info, foreground="#777", wraplength=200
+        ).pack(anchor="w", pady=(0, 12))
+
         ttk.Label(side, text="Line thickness (px)").pack(anchor="w")
         ttk.Spinbox(
             side, from_=1, to=50, width=10, textvariable=self.var_thickness,
@@ -77,6 +95,10 @@ class GridMode(CanvasView):
         self.spacing_box.bind("<<ComboboxSelected>>", lambda _e: self._normalize_spacing())
         self.spacing_box.bind("<Return>", lambda _e: self._normalize_spacing())
         self.spacing_box.bind("<FocusOut>", lambda _e: self._normalize_spacing())
+        ttk.Label(
+            side, text="With a paper chosen, type e.g. '3 cm' for a distance on the sheet.",
+            foreground="#777", wraplength=200,
+        ).pack(anchor="w", pady=(0, 4))
         ttk.Label(
             side, textvariable=self.var_warning, foreground="#b35300", wraplength=200
         ).pack(anchor="w", pady=(0, 12))
@@ -134,9 +156,7 @@ class GridMode(CanvasView):
         # False when the dimensions share no usable divisor, i.e. no spacing can
         # tile this photo with whole squares.
         self.exact_possible = any(self.iw % v == 0 and self.ih % v == 0 for v in self.options)
-        self.spacing_box.config(
-            values=[f"{v} px   ({cells(self.iw, v)} x {cells(self.ih, v)})" for v in self.options]
-        )
+        self._refresh_paper()
         self.var_spacing.set(str(default_spacing(self.options, self.iw, self.ih)))
         self.subdivisions.clear()
         self._cache_key = None
@@ -161,6 +181,42 @@ class GridMode(CanvasView):
     def content_size(self) -> tuple[int, int]:
         return self.iw, self.ih
 
+    # ----------------------------------------------------------------- paper
+
+    @property
+    def paper_mm(self) -> tuple[int, int] | None:
+        return PAPER_FORMATS.get(self.var_paper.get())
+
+    @property
+    def mm_per_px(self) -> float:
+        """Paper mm per photo pixel, or 0 with no paper chosen (or no photo)."""
+        paper = self.paper_mm
+        return mm_per_px(self.iw, self.ih, paper) if paper else 0.0
+
+    def _on_paper_change(self) -> None:
+        self._refresh_paper()
+        self.request_redraw()
+
+    def _refresh_paper(self) -> None:
+        """Re-label the spacing list and the sheet note for the chosen paper."""
+        mpp = self.mm_per_px
+        values = []
+        for v in self.options:
+            text = f"{v} px   ({cells(self.iw, v)} x {cells(self.ih, v)})"
+            values.append(f"{text}   {format_cm(v, mpp)}" if mpp else text)
+        self.spacing_box.config(values=values)
+        paper = self.paper_mm
+        if not paper or not self.iw:
+            self.var_paper_info.set("")
+            return
+        used_w, used_h = self.iw * mpp, self.ih * mpp
+        note = f"The photo fills {used_w / 10:.1f} x {used_h / 10:.1f} cm"
+        if abs(used_w - paper[0]) > 1 or abs(used_h - paper[1]) > 1:
+            note += f" of the {paper[0] / 10:.1f} x {paper[1] / 10:.1f} cm sheet"
+        else:
+            note += ", the whole sheet"
+        self.var_paper_info.set(note + ".")
+
     # -------------------------------------------------------------- settings
 
     def _normalize_spacing(self) -> None:
@@ -169,9 +225,15 @@ class GridMode(CanvasView):
 
     @property
     def spacing(self) -> int:
-        raw = self.var_spacing.get().split("px")[0].strip()
+        text = self.var_spacing.get()
+        # A list entry reads '124 px ... 3.0 cm', so px wins; a bare 'cm'
+        # means a distance on the paper.
+        in_cm = "px" not in text and "cm" in text and self.mm_per_px > 0
+        raw = text.split("px")[0].split("cm")[0].strip().replace(",", ".")
         try:
-            value = int(float(raw))
+            value = (
+                spacing_from_cm(float(raw), self.mm_per_px) if in_cm else int(float(raw))
+            )
         except ValueError:
             value = default_spacing(self.options, max(self.iw, 1), max(self.ih, 1))
         return max(2, min(value, max(self.iw, self.ih, 2)))
@@ -275,8 +337,10 @@ class GridMode(CanvasView):
                 self.canvas.create_line(cell_left, cy, cell_right, cy, fill=rgb, width=width)
 
         refined = f"  -  {len(self.subdivisions)} refined" if self.subdivisions else ""
+        mpp = self.mm_per_px
+        on_paper = f" = {format_cm(spacing, mpp)} on {self.var_paper.get()}" if mpp else ""
         self.var_status.set(
-            f"Zoom {z * 100:.0f}%  -  grid {spacing} px  -  "
+            f"Zoom {z * 100:.0f}%  -  grid {spacing} px{on_paper}  -  "
             f"{cells(self.iw, spacing)} x {cells(self.ih, spacing)} cells{refined}"
         )
         if self.iw % spacing == 0 and self.ih % spacing == 0:

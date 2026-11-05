@@ -103,6 +103,12 @@ Or double-click [run.bat](run.bat).
   changes. Picking a cell reuses button 1: `on_release` treats a release within
   3 px of the press as a click and anything further as a pan, so dragging is
   unaffected.
+- **Paper formats (A4 / A3, both ways round) live in `PAPER_FORMATS`** in
+  `common.py`, in mm. Grid mode does not resize the photo for them: the
+  photo is assumed scaled up until it fits the sheet (`mm_per_px`), and the
+  spacing list, the status line and a typed "3 cm" spacing are translated
+  through that. Compose mode turns them into frame presets at `PAPER_DPI`
+  (300), and `PAPER_FRAMES` names them in the dropdown and the ratio thumbnail.
 - **Compose mode keeps one list of `Item`s**: `Placement` (a photo) and `Shape`
   (a hollow rectangle or ellipse) side by side, ordered back to front. Position
   and size live on the item in frame pixels. `Item.resize` does the anchored

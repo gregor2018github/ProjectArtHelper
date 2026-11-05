@@ -11,13 +11,14 @@ from typing import TYPE_CHECKING
 
 from PIL import Image, ImageChops, ImageDraw, ImageOps, ImageTk
 
-from .common import BG_RGB, OPEN_FILETYPES, script_dir
+from .common import BG_RGB, OPEN_FILETYPES, PAPER_DPI, script_dir
 from .compose import (
     BACKGROUND_COLOR,
     DEFAULT_ERASER_PX,
     DEFAULT_FRAME,
     Background,
     FRAME_PRESETS,
+    PAPER_FRAMES,
     MAX_ERASER_PX,
     MIN_ERASER_PX,
     MAX_FRAME,
@@ -95,7 +96,7 @@ class ComposeMode(CanvasView):
 
         ttk.Label(side, text="Frame size: width x height (px)").pack(anchor="w")
         self.frame_box = ttk.Combobox(
-            side, width=22, textvariable=self.var_frame,
+            side, width=26, textvariable=self.var_frame,
             values=[describe_size(s) for s in FRAME_PRESETS],
         )
         self.frame_box.pack(anchor="w", pady=(2, 2))
@@ -103,7 +104,7 @@ class ComposeMode(CanvasView):
         self.frame_box.bind("<Return>", lambda _e: self.apply_frame_size())
         self.frame_box.bind("<FocusOut>", lambda _e: self.apply_frame_size())
         self.ratio_canvas = tk.Canvas(
-            side, width=200, height=46, highlightthickness=0,
+            side, width=200, height=52, highlightthickness=0,
             background=ttk.Style().lookup("TFrame", "background") or "#f0f0f0",
         )
         self.ratio_canvas.pack(anchor="w", pady=(4, 2))
@@ -268,6 +269,12 @@ class ComposeMode(CanvasView):
             box_w + 12, 22, anchor="nw",
             text=f"{fw} wide x {fh} high", fill="#777777", font=("Segoe UI", 8),
         )
+        paper = PAPER_FRAMES.get(self.frame_size)
+        if paper:
+            canvas.create_text(
+                box_w + 12, 36, anchor="nw", text=f"{paper}, {PAPER_DPI} dpi",
+                fill="#777777", font=("Segoe UI", 8),
+            )
 
     def content_size(self) -> tuple[int, int]:
         return self.frame_size

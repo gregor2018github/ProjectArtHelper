@@ -43,6 +43,29 @@ def grid_positions(length: int, spacing: int) -> list[int]:
     return list(range(spacing, length, spacing))
 
 
+def mm_per_px(width: int, height: int, paper_mm: tuple[float, float]) -> float:
+    """Paper millimetres per photo pixel, with the photo as large as fits the sheet.
+
+    That is how a drawing is laid out - scaled up until one pair of edges
+    touches the paper - so a photo of another shape leaves a margin on the
+    other pair rather than running off it.
+    """
+    if width < 1 or height < 1:
+        return 0.0
+    return min(paper_mm[0] / width, paper_mm[1] / height)
+
+
+def spacing_from_cm(cm: float, mm_per_pixel: float) -> int:
+    """The pixel spacing that comes out *cm* apart on the paper."""
+    return max(1, round(cm * 10 / mm_per_pixel)) if mm_per_pixel > 0 else 1
+
+
+def format_cm(px: float, mm_per_pixel: float) -> str:
+    """A pixel length on the paper: '3.2 cm', or '7.5 mm' below a centimetre."""
+    mm = px * mm_per_pixel
+    return f"{mm / 10:.1f} cm" if mm >= 10 else f"{mm:.1f} mm"
+
+
 SUBDIVISION_FACTORS = (2, 4, 8)
 
 

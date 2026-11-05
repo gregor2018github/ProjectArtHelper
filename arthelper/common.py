@@ -22,6 +22,21 @@ COLORS = {
     "White": (255, 255, 255),
 }
 
+# The paper the drawings go on: (width, height) in mm, each way round.
+PAPER_FORMATS = {
+    "A4 portrait": (210, 297),
+    "A4 landscape": (297, 210),
+    "A3 portrait": (297, 420),
+    "A3 landscape": (420, 297),
+}
+PAPER_DPI = 300  # what a paper format becomes in pixels for compose mode
+
+
+def paper_pixels(size_mm: tuple[int, int], dpi: int = PAPER_DPI) -> tuple[int, int]:
+    """A paper size in mm as whole pixels at *dpi* - A4 is 2480 x 3508 at 300."""
+    return tuple(round(mm / 25.4 * dpi) for mm in size_mm)  # type: ignore[return-value]
+
+
 MIN_ZOOM = 0.02
 MAX_ZOOM = 16.0
 
