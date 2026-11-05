@@ -214,8 +214,8 @@ Or double-click [run.bat](run.bat).
   `loupe`: pointer motion redraws only it, `render` puts it back after wiping
   the canvas, and `_loupe_wanted` hides it during drags and over a corner
   handle, which it would otherwise cover just as the user reaches for it. Its
-  zoom is relative to the view (`zoom * loupe_zoom`), so it magnifies at any
-  view zoom; crops come from `Image.transform(EXTENT)` with the backdrop as
+  zoom is relative to the view (`zoom * loupe_zoom`); the default 1x makes it a
+  before / after window at the view's own scale, and higher values magnify; crops come from `Image.transform(EXTENT)` with the backdrop as
   fill, so the edge of the paper needs no special case.
 - **Dialogs start in `script_dir()`**, not the desktop or the last folder used:
   the photos live next to the script.

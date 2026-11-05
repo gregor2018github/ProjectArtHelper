@@ -111,10 +111,11 @@ with the buttons in the top left:
 
   Each step can be switched off.
 - The **loupe** follows the pointer and shows the cleaned version of the spot
-  underneath, magnified. Over the original photo that makes a before / after
-  comparison right where you look; over the result it is a plain magnifier.
-  Set its **Size** (240 px to start with) and **Zoom** (3x to start with,
-  relative to the view, so it always shows more than the canvas around it)
+  underneath. Over the original photo that makes a before / after
+  comparison right where you look; over the result it is a magnifier once
+  you raise the zoom.
+  Set its **Size** (340 px to start with) and **Zoom** (1x to start with:
+  the same scale as the view; raise it to magnify)
   under the checkbox, or untick it. It steps aside over a corner handle and
   while you drag.
 - **Paper shape** fixes the long : short ratio when you know it: `1.414` for

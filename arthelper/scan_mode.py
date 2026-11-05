@@ -39,10 +39,11 @@ RATIO_CHOICES = [
 ]
 OUTLINE = "#33dd66"
 SETTLE_MS = 350  # wait this long after a settings change before re-processing
-# The loupe: side in screen pixels, and magnification relative to the view, so
-# it always shows more detail than the canvas around it at any zoom.
-LOUPE_SIZE = 240
-LOUPE_ZOOM = 3.0
+# The loupe: side in screen pixels, and magnification relative to the view. At
+# 1x it is a window onto the cleaned version at the scale of the view itself;
+# higher values magnify, whatever the view zoom.
+LOUPE_SIZE = 340
+LOUPE_ZOOM = 1.0
 LOUPE_SIZE_RANGE = (100, 600)
 LOUPE_ZOOM_RANGE = (1.0, 12.0)
 
