@@ -27,7 +27,10 @@ MODES = (
 class ArtHelperApp(tk.Tk):
     """The window: a mode switch on top, one mode frame filling the rest."""
 
-    def __init__(self, path: Path | None = None, image: Image.Image | None = None) -> None:
+    def __init__(
+        self, path: Path | None = None, image: Image.Image | None = None,
+        mode: str = "grid",
+    ) -> None:
         super().__init__()
         set_app_icon(self)
         self.path: Path | None = None
@@ -36,7 +39,9 @@ class ArtHelperApp(tk.Tk):
         self.geometry("1200x760")
         self.minsize(820, 520)
 
-        self.var_mode = tk.StringVar(value="grid")
+        if mode not in (key for key, _l, _w in MODES):
+            mode = "grid"
+        self.var_mode = tk.StringVar(value=mode)
         bar = ttk.Frame(self, padding=(10, 8))
         bar.pack(side="top", fill="x")
         for value, label, _word in MODES:
@@ -137,9 +142,13 @@ def main() -> int:
     root = tk.Tk()
     root.withdraw()
     set_app_icon(root)
-    play_splash(root)
+    mode = play_splash(root)
+    if mode is None:  # Escape on the splash: leave without opening anything
+        root.destroy()
+        return 0
+    word = next((w for key, _l, w in MODES if key == mode), "Grid")
     path = filedialog.askopenfilename(
-        title="Choose a photo (Cancel to start with an empty window)",
+        title=f"{word} mode: choose a photo (Cancel to start with an empty window)",
         initialdir=script_dir(),
         filetypes=OPEN_FILETYPES,
     )
@@ -153,7 +162,7 @@ def main() -> int:
             messagebox.showerror("Could not open image", f"{path}\n\n{exc}")
             return 1
 
-    app = ArtHelperApp(Path(path) if image is not None else None, image)
+    app = ArtHelperApp(Path(path) if image is not None else None, image, mode)
     app.bring_to_front()
     app.mainloop()
     return 0

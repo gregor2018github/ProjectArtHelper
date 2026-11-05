@@ -155,6 +155,9 @@ python -m venv .venv
 On Windows you can also double-click `run.bat`.
 
 A short intro animation plays at start (click or press any key to skip it).
+It ends on three buttons — **grid**, **compose**, **scan** (or keys 1 / 2 / 3);
+pick one and the window opens in that mode once you choose a photo. Escape
+quits.
 
 1. Choose a photo in the file dialog (or Cancel and use **Open photo…** in the
    window; all modes share the photo you open).

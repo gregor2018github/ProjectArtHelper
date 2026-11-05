@@ -12,7 +12,12 @@ The animation, in seconds:
     ART   "Art" is revealed left to right along a slanted edge (handwriting)
     TYPE  "helper" is typed letter by letter; the cursor clears the ring
           in front of it as it goes
+    BUTTONS  the three mode buttons (grid / compose / scan) fade in below
     then  the cursor blinks until DURATION
+
+The buttons are part of the picture: `button_at()` hit-tests them and
+`frame(t, hover)` draws the hovered one highlighted, so the splash window
+needs no widgets of its own.
 
 Every layer is rendered once, supersampled, as an alpha mask; a frame is just
 a few numpy blends, so playback costs a few ms per frame.
@@ -43,7 +48,7 @@ SUPERSAMPLE = 3
 RING = (0.10, 0.95)
 ART = (0.60, 1.55)
 TYPE = (1.60, 2.25)
-TAGLINE = (2.20, 2.60)
+BUTTONS = (2.20, 2.60)
 DURATION = 3.10
 BLINK_PERIOD = 0.40
 
@@ -116,9 +121,13 @@ class Layout:
     mono_size: int = 94
     helper_pos: tuple[float, float] = (265, 300)  # baseline-left of "helper"
     cut_pad: float = 9  # paper kept clear around "helper" where it crosses
-    tagline: str = "grid  ·  compose  ·  scan"
-    tagline_size: int = 26
-    tagline_y: float = 372
+    buttons: tuple[str, ...] = ("grid", "compose", "scan")
+    button_size: tuple[float, float] = (150, 42)
+    button_gap: float = 18
+    button_top: float = 338
+    button_radius: float = 10
+    button_outline: float = 2
+    button_text_size: int = 32
 
 
 class LogoAnimation:
@@ -183,14 +192,34 @@ class LogoAnimation:
         self.cursor_w = 0.36 * lay.mono_size * k
         self.cursor_gap = 0.10 * lay.mono_size * k
 
-        # Tagline, small and grey, centred under everything.
-        small = _font(MONO_FONT, round(lay.tagline_size * k * ss))
+        # The mode buttons, a centred row under everything. Each gets an
+        # outline, a fill and a label mask, so hover is only a choice of
+        # colours at frame time.
+        small = _font(MONO_FONT, round(lay.button_text_size * k * ss))
+        bw, bh = lay.button_size
+        n = len(lay.buttons)
+        left = (SIZE[0] - (n * bw + (n - 1) * lay.button_gap)) / 2
+        self.button_boxes: list[tuple[float, float, float, float]] = []
+        self.button_masks: list[tuple[np.ndarray, np.ndarray, np.ndarray]] = []
+        for i, label in enumerate(lay.buttons):
+            x0 = left + i * (bw + lay.button_gap)
+            box = (x0 * k, lay.button_top * k, (x0 + bw) * k, (lay.button_top + bh) * k)
+            self.button_boxes.append(box)
 
-        def tagline(d: ImageDraw.ImageDraw, s: int) -> None:
-            d.text((w / 2 * s, lay.tagline_y * k * s), lay.tagline,
-                   font=small, fill=255, anchor="ms")
+            def shape(d: ImageDraw.ImageDraw, s: int, box=box, **kw) -> None:
+                d.rounded_rectangle([v * s for v in box], radius=lay.button_radius * k * s, **kw)
 
-        self.tagline = _mask(self.size, ss, tagline)
+            def text(d: ImageDraw.ImageDraw, s: int, box=box, label=label) -> None:
+                # VT323 sits high on its baseline; nudge the middle down a touch.
+                cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2 + 0.02 * bh * k
+                d.text((cx * s, cy * s), label, font=small, fill=255, anchor="mm")
+
+            self.button_masks.append((
+                _mask(self.size, ss, lambda d, s, f=shape: f(
+                    d, s, outline=255, width=max(1, round(lay.button_outline * k * s)))),
+                _mask(self.size, ss, lambda d, s, f=shape: f(d, s, fill=255)),
+                _mask(self.size, ss, text),
+            ))
         self._xx = xx
 
         # Each layer only touches its own bounding box per frame (keeps a
@@ -198,15 +227,34 @@ class LogoAnimation:
         self.ring_box = _bbox(self.ring)
         self.art_box = _bbox(self.art)
         self.helper_box = _bbox(self.helper)
-        self.tagline_box = _bbox(self.tagline)
+        self.button_crop = [
+            _rect_box(x0 - 1, y0 - 1, x1 + 1, y1 + 1, w, h)
+            for x0, y0, x1, y1 in self.button_boxes
+        ]
+
+    def button_at(self, x: float, y: float) -> int | None:
+        """Index of the button under (x, y) in output pixels, or None."""
+        for i, (x0, y0, x1, y1) in enumerate(self.button_boxes):
+            if x0 <= x < x1 and y0 <= y < y1:
+                return i
+        return None
 
     # ------------------------------------------------------------------ frame
     def _cursor_box(self, typed: int) -> tuple[float, float, float, float]:
         x0 = self.letter_edges[typed] + (self.cursor_gap if typed else 0.0)
         return x0, self.text_top + 0.08 * self.lay.mono_size * self.scale, x0 + self.cursor_w, self.text_bottom
 
-    def frame(self, t: float) -> Image.Image:
-        """The logo at time `t` seconds (t >= DURATION gives the final logo)."""
+    def buttons_shown(self, t: float) -> bool:
+        """Whether the buttons have started fading in (and can be clicked)."""
+        return t >= BUTTONS[0]
+
+    def frame(self, t: float, hover: int | None = None) -> Image.Image:
+        """The logo at time `t` seconds (t >= DURATION gives the final logo).
+
+        Args:
+            t: Seconds since the start of the animation.
+            hover: Index of the button to draw highlighted, if any.
+        """
         w, h = self.size
         out = np.empty((h, w, 3), np.float32)
         out[:] = PAPER
@@ -265,11 +313,17 @@ class LogoAnimation:
                 cb = _rect_box(*self._cursor_box(typed), w, h)
                 paint(np.ones((cb[3] - cb[1], cb[2] - cb[0]), np.float32), RED, cb)
 
-        # Tagline fades in.
-        p_tag = _progress(t, TAGLINE)
-        if p_tag > 0:
-            tb = self.tagline_box
-            paint(crop(self.tagline, tb) * p_tag, GREY, tb)
+        # Buttons fade in; the hovered one is filled red with paper text.
+        p_btn = _progress(t, BUTTONS)
+        if p_btn > 0:
+            for i, (outline, fill, label) in enumerate(self.button_masks):
+                bb = self.button_crop[i]
+                if i == hover:
+                    paint(crop(fill, bb) * p_btn, RED, bb)
+                    paint(crop(label, bb) * p_btn, PAPER, bb)
+                else:
+                    paint(crop(outline, bb) * p_btn, GREY, bb)
+                    paint(crop(label, bb) * p_btn, INK, bb)
 
         return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8), "RGB")
 

@@ -55,7 +55,7 @@ no config files.
     timeline constants and the `Layout` dataclass holding every position.
   - [splash.py](arthelper/splash.py) — `Splash(tk.Toplevel)` /
     `play_splash()`, the borderless start-up window that plays the
-    animation, and `set_app_icon()`.
+    animation and returns the mode button the user picks, and `set_app_icon()`.
   - [assets/](arthelper/assets/) — the two bundled OFL fonts (Pinyon Script
     for "Art", VT323 for "helper") with their licence texts.
   - [app.py](arthelper/app.py) — `ArtHelperApp(tk.Tk)`, the shell: the mode
@@ -229,7 +229,7 @@ Or double-click [run.bat](run.bat).
   a drawn logo scales cleanly, so `logo.py` renders it from the two bundled
   fonts at start-up. The fonts are bundled (not Windows' Segoe Script) so the
   logo looks identical everywhere and can be checked headlessly. Each layer
-  (ring, "Art", "helper", tagline) is rendered once, supersampled, as an alpha
+  (ring, "Art", "helper", each mode button) is rendered once, supersampled, as an alpha
   mask; a frame is a few numpy blends limited to each layer's bounding box
   (~12 ms at 640x400). The ring sweep uses a precomputed angle map, the "Art"
   reveal a slanted coordinate matching the script's lean, and the gap in the
@@ -237,9 +237,17 @@ Or double-click [run.bat](run.bat).
   ring as it types.
 - **The splash follows the wall clock**, not a frame counter, so a slow frame
   is dropped instead of stretching the animation. It plays on the withdrawn
-  root in `main()` before the photo dialog; any click or key skips to the
-  final logo and the fade-out. `_tick` returns early once closing, because a
-  skip leaves its scheduled tick pending.
+  root in `main()` before the photo dialog.
+- **The splash is also the mode picker.** Its grid / compose / scan buttons
+  are drawn into the logo picture (`Layout.buttons`, `button_at()`,
+  `frame(t, hover)`), not Tk widgets, so the splash stays one image in a
+  label and they fade in with the rest. After the animation the logo stays up
+  until a button is clicked (or 1 / 2 / 3 pressed); then it fades out in
+  `FADE_S` (0.18 s) and `main()` opens the photo dialog and builds
+  `ArtHelperApp(..., mode)`. A click elsewhere or another key skips to the
+  final frame; Escape quits, since a borderless window has no close button.
+  The pending tick / fade job is kept in `_job` and cancelled in `destroy`,
+  or closing mid-animation leaves Tk firing it on a dead window.
 - **Dialogs start in `script_dir()`**, not the desktop or the last folder used:
   the photos live next to the script.
 - **Zoom is anchored at the cursor**; the view is stored as an image-space
