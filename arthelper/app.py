@@ -118,6 +118,21 @@ class ArtHelperApp(tk.Tk):
             return
         self.set_image(Path(target), image)
 
+    def maximize(self) -> None:
+        """Fill the screen, keeping the title bar and the taskbar.
+
+        Windows and macOS call it "zoomed"; X11 window managers use the
+        -zoomed attribute instead. The 1200x760 geometry stays as the size
+        to return to when the user un-maximizes.
+        """
+        try:
+            self.state("zoomed")
+        except tk.TclError:
+            try:
+                self.attributes("-zoomed", True)
+            except tk.TclError:
+                pass  # no maximize support: keep the default size
+
     def bring_to_front(self) -> None:
         """Put the window in front of whatever the user was looking at.
 
@@ -163,6 +178,7 @@ def main() -> int:
             return 1
 
     app = ArtHelperApp(Path(path) if image is not None else None, image, mode)
+    app.maximize()
     app.bring_to_front()
     app.mainloop()
     return 0
