@@ -50,6 +50,14 @@ no config files.
     [compose_mode.py](arthelper/compose_mode.py) /
     [scan_mode.py](arthelper/scan_mode.py) — one `CanvasView` subclass
     each: the sidebar, the event handling and the drawing for that mode.
+  - [logo.py](arthelper/logo.py) — pure logo drawing (Pillow + numpy, no
+    tkinter): `LogoAnimation.frame(t)`, `render_logo`, `render_icon`, the
+    timeline constants and the `Layout` dataclass holding every position.
+  - [splash.py](arthelper/splash.py) — `Splash(tk.Toplevel)` /
+    `play_splash()`, the borderless start-up window that plays the
+    animation, and `set_app_icon()`.
+  - [assets/](arthelper/assets/) — the two bundled OFL fonts (Pinyon Script
+    for "Art", VT323 for "helper") with their licence texts.
   - [app.py](arthelper/app.py) — `ArtHelperApp(tk.Tk)`, the shell: the mode
     switch across the top (driven by the `MODES` table), every mode frame
     built up front and `pack`/`pack_forget`-ed as the mode changes, the
@@ -217,6 +225,21 @@ Or double-click [run.bat](run.bat).
   zoom is relative to the view (`zoom * loupe_zoom`); the default 1x makes it a
   before / after window at the view's own scale, and higher values magnify; crops come from `Image.transform(EXTENT)` with the backdrop as
   fill, so the edge of the paper needs no special case.
+- **The logo is drawn, not shipped as images.** `.gitignore` drops `*.png`, and
+  a drawn logo scales cleanly, so `logo.py` renders it from the two bundled
+  fonts at start-up. The fonts are bundled (not Windows' Segoe Script) so the
+  logo looks identical everywhere and can be checked headlessly. Each layer
+  (ring, "Art", "helper", tagline) is rendered once, supersampled, as an alpha
+  mask; a frame is a few numpy blends limited to each layer's bounding box
+  (~12 ms at 640x400). The ring sweep uses a precomputed angle map, the "Art"
+  reveal a slanted coordinate matching the script's lean, and the gap in the
+  ring is a rectangle that grows with the typed text — the cursor clears the
+  ring as it types.
+- **The splash follows the wall clock**, not a frame counter, so a slow frame
+  is dropped instead of stretching the animation. It plays on the withdrawn
+  root in `main()` before the photo dialog; any click or key skips to the
+  final logo and the fade-out. `_tick` returns early once closing, because a
+  skip leaves its scheduled tick pending.
 - **Dialogs start in `script_dir()`**, not the desktop or the last folder used:
   the photos live next to the script.
 - **Zoom is anchored at the cursor**; the view is stored as an image-space
@@ -230,8 +253,9 @@ Or double-click [run.bat](run.bat).
 ## Testing
 
 There is no test suite. Verify changes headlessly by importing
-`arthelper.grid` / `arthelper.compose` / `arthelper.scan` — none touches
-tkinter — and
+`arthelper.grid` / `arthelper.compose` / `arthelper.scan` / `arthelper.logo` —
+none touches tkinter (render `LogoAnimation().frame(t)` at a few times and look
+at the pictures) — and
 smoke-test the window by constructing `ArtHelperApp`, calling `app.after(...)` to
 drive zoom/pan, then `app.close()`.
 

@@ -1,5 +1,7 @@
 # Art Helper
 
+![Art Helper](examples/logo.png)
+
 A small desktop tool for preparing a drawing. It has three modes, switched
 with the buttons in the top left:
 
@@ -152,6 +154,8 @@ python -m venv .venv
 
 On Windows you can also double-click `run.bat`.
 
+A short intro animation plays at start (click or press any key to skip it).
+
 1. Choose a photo in the file dialog (or Cancel and use **Open photo…** in the
    window; all modes share the photo you open).
 2. Set thickness, spacing and colour in the left panel — the preview updates as
@@ -176,8 +180,10 @@ chose at full resolution.
 The launcher is `art_helper.py`; the program itself lives in the
 `arthelper/` package — `grid.py`, `compose.py` and `scan.py` hold the maths
 with no tkinter in sight, `view.py` the shared canvas, and `grid_mode.py` /
-`compose_mode.py` / `scan_mode.py` / `app.py` the interface.
+`compose_mode.py` / `scan_mode.py` / `app.py` the interface. `logo.py` draws
+the logo and its intro animation (also tkinter-free) and `splash.py` plays it.
 
 ## License
 
-MIT
+MIT. The bundled fonts in `arthelper/assets/` (Pinyon Script, VT323) are under
+the SIL Open Font License; their licence texts sit next to them.

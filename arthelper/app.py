@@ -13,6 +13,7 @@ from .common import OPEN_FILETYPES, load_image, script_dir
 from .compose_mode import ComposeMode
 from .grid_mode import GridMode
 from .scan_mode import ScanMode
+from .splash import play_splash, set_app_icon
 from .view import CanvasView
 
 # (key, button label, title word) for each mode, in the order of the switch.
@@ -28,6 +29,7 @@ class ArtHelperApp(tk.Tk):
 
     def __init__(self, path: Path | None = None, image: Image.Image | None = None) -> None:
         super().__init__()
+        set_app_icon(self)
         self.path: Path | None = None
         self.image: Image.Image | None = None
 
@@ -134,6 +136,8 @@ class ArtHelperApp(tk.Tk):
 def main() -> int:
     root = tk.Tk()
     root.withdraw()
+    set_app_icon(root)
+    play_splash(root)
     path = filedialog.askopenfilename(
         title="Choose a photo (Cancel to start with an empty window)",
         initialdir=script_dir(),
