@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import math
 import os
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import TYPE_CHECKING
 
-from PIL import Image, ImageTk
+from PIL import Image
 
 from .common import COLORS, OPEN_FILETYPES
 from .grid import (
@@ -232,34 +231,14 @@ class GridMode(CanvasView):
             self.placeholder("Open a photo to start")
             return
         self.clamp_offsets()
-        cw, ch = self.canvas_size()
         z = self.zoom
         self.canvas.delete("all")
-
-        x0 = max(0, int(math.floor(self.offset_x)))
-        y0 = max(0, int(math.floor(self.offset_y)))
-        x1 = min(self.iw, int(math.ceil(self.offset_x + cw / z)))
-        y1 = min(self.ih, int(math.ceil(self.offset_y + ch / z)))
-        if x1 <= x0 or y1 <= y0:
+        box = self.show_image(self.image)
+        if box is None:
             return
-
-        tw = max(1, int(round((x1 - x0) * z)))
-        th = max(1, int(round((y1 - y0) * z)))
-        # Downscaling with LANCZOS costs real time on a large photo, so use the
-        # cheap filter while a drag is in flight; on_release redraws sharply.
-        if z >= 1:
-            resample = Image.NEAREST
-        else:
-            resample = Image.BILINEAR if self._drag else Image.LANCZOS
-        key = (x0, y0, x1, y1, tw, th, resample)
-        if key != self._cache_key:
-            crop = self.image.crop((x0, y0, x1, y1)).resize((tw, th), resample)
-            self._photo = ImageTk.PhotoImage(crop.convert("RGB"))
-            self._cache_key = key
-
-        px = (x0 - self.offset_x) * z
-        py = (y0 - self.offset_y) * z
-        self.canvas.create_image(px, py, image=self._photo, anchor="nw")
+        px, py, tw, th = box
+        x0, y0 = self.to_image(px, py)
+        x1, y1 = self.to_image(px + tw, py + th)
 
         # The grid is drawn as canvas lines rather than baked into the preview
         # bitmap, so thin lines stay visible (min 1 px) even when zoomed out.

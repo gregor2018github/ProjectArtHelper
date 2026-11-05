@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import math
 import tkinter as tk
 from tkinter import ttk
 from typing import TYPE_CHECKING
 
-from PIL import ImageTk
+from PIL import Image, ImageTk
 
 from .common import BG, MAX_ZOOM, MIN_ZOOM
 
@@ -261,6 +262,43 @@ class CanvasView(ttk.Frame):
 
     def render(self) -> None:
         raise NotImplementedError
+
+    def show_image(self, image: Image.Image) -> tuple[float, float, int, int] | None:
+        """Draw the visible part of *image* (in content coordinates) on the canvas.
+
+        Only the crop that is on screen is resized, so a large photo stays
+        responsive; the result is cached on the crop, size, filter and image.
+        Returns the canvas box it landed in as (left, top, width, height), or
+        None when none of the image is in view.
+        """
+        cw, ch = self.canvas_size()
+        z = self.zoom
+        iw, ih = image.size
+        x0 = max(0, int(math.floor(self.offset_x)))
+        y0 = max(0, int(math.floor(self.offset_y)))
+        x1 = min(iw, int(math.ceil(self.offset_x + cw / z)))
+        y1 = min(ih, int(math.ceil(self.offset_y + ch / z)))
+        if x1 <= x0 or y1 <= y0:
+            return None
+
+        tw = max(1, int(round((x1 - x0) * z)))
+        th = max(1, int(round((y1 - y0) * z)))
+        # Downscaling with LANCZOS costs real time on a large photo, so use the
+        # cheap filter while a drag is in flight; on_release redraws sharply.
+        if z >= 1:
+            resample = Image.NEAREST
+        else:
+            resample = Image.BILINEAR if self._drag else Image.LANCZOS
+        key = (id(image), x0, y0, x1, y1, tw, th, resample)
+        if key != self._cache_key:
+            crop = image.crop((x0, y0, x1, y1)).resize((tw, th), resample)
+            self._photo = ImageTk.PhotoImage(crop.convert("RGB"))
+            self._cache_key = key
+
+        px = (x0 - self.offset_x) * z
+        py = (y0 - self.offset_y) * z
+        self.canvas.create_image(px, py, image=self._photo, anchor="nw")
+        return px, py, tw, th
 
     def placeholder(self, text: str) -> None:
         cw, ch = self.canvas_size()

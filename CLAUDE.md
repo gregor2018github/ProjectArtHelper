@@ -4,8 +4,8 @@ Guidance for Claude Code when working in this repository.
 
 ## What this is
 
-Art Helper: a small desktop tool for preparing drawings, with two modes in one
-window. (It began as "Raster Lines" when grid mode was all there was, hence the
+Art Helper: a small desktop tool for preparing drawings, with three modes in
+one window. (It began as "Raster Lines" when grid mode was all there was, hence the
 old name in commits before the rename.)
 
 - **Grid mode** — load a photo, overlay a regular grid ("raster") of coloured
@@ -14,6 +14,10 @@ old name in commits before the rename.)
 - **Compose mode** — plan a new picture: pick the final frame size, place a
   photo in it, block areas out with hollow rectangles and circles, and move /
   scale everything until the composition works.
+- **Scan mode** — take a hand-held photo of a finished drawing and turn it
+  into a clean image for the website: find the sheet, fix the perspective,
+  crop, even out paper white and ink black. It began as the stand-alone
+  OpenCV script `wobbly_fix.py` and was ported into the package.
 
 Single user, single developer. Keep it simple — no packaging, no plugin system,
 no config files.
@@ -32,19 +36,27 @@ no config files.
   - [compose.py](arthelper/compose.py) — pure composition maths and data:
     `parse_frame_size`, `fit_scale`, `Item` with its `Placement` / `Shape` /
     `Background` subclasses, `shape_mask`, `render_composition`, `flatten`.
+  - [scan.py](arthelper/scan.py) — pure scan clean-up (Pillow + numpy):
+    `min_filter` / `max_filter`, `detect_corners`, `straighten`,
+    `flatten_lighting`, `flatten_blacks`, `set_black_point`, and the
+    `clean_scan` / `clean_folder` drivers taking a `ScanSettings`.
   - [view.py](arthelper/view.py) — `CanvasView(ttk.Frame)`, the shared
     sidebar + canvas: zoom, pan, the throttled redraw, the coordinate helpers
-    and the deferred fit. Subclasses supply `content_size()` (the world they
-    live in) and `render()` — `draw()` belongs to the base, which uses it to
-    honour a pending fit first.
+    and the deferred fit, plus `show_image()`, which draws the visible crop
+    of an image. Subclasses supply `content_size()` (the world they live in) and
+    `render()` — `draw()` belongs to the base, which uses it to honour a
+    pending fit first.
   - [grid_mode.py](arthelper/grid_mode.py) /
-    [compose_mode.py](arthelper/compose_mode.py) — one `CanvasView` subclass
+    [compose_mode.py](arthelper/compose_mode.py) /
+    [scan_mode.py](arthelper/scan_mode.py) — one `CanvasView` subclass
     each: the sidebar, the event handling and the drawing for that mode.
   - [app.py](arthelper/app.py) — `ArtHelperApp(tk.Tk)`, the shell: the mode
-    switch across the top, both mode frames built up front and
-    `pack`/`pack_forget`-ed as the mode changes, the shared "open a photo"
-    action that hands the image to both, and `main()`.
-- [requirements.txt](requirements.txt) — Pillow only; tkinter ships with Python.
+    switch across the top (driven by the `MODES` table), every mode frame
+    built up front and `pack`/`pack_forget`-ed as the mode changes, the
+    shared "open a photo" action that hands the image to all of them, and
+    `main()`.
+- [requirements.txt](requirements.txt) — Pillow and numpy; tkinter ships with
+  Python. numpy came in with scan mode; OpenCV was deliberately left out.
 - `.venv/` — local virtual environment (git-ignored).
 - `examples/screenshot.png` — the README screenshot. `.gitignore` excludes
   `*.png` but re-includes `examples/*.png`; regenerate it by driving
@@ -173,6 +185,27 @@ Or double-click [run.bat](run.bat).
   the widget under the pointer and does nothing unless it reaches *that*
   view's canvas, which keeps the two modes' handlers and the drawing canvas's
   own zoom out of each other's way.
+- **Scan mode is a port, not a wrapper.** `wobbly_fix.py` used OpenCV; the
+  user chose numpy-only, so its few OpenCV calls are rebuilt: erode / dilate
+  as van Herk min / max filters (O(n) at any window size, and pixel-identical
+  to `cv2.erode` / `cv2.dilate`), contours as a run-length union-find on the
+  saturation mask, `approxPolyDP` as Douglas-Peucker on the convex hull, and
+  the warp as Pillow's `PERSPECTIVE` transform. Pillow puts pixel centres at
+  +0.5, so `straighten` shifts both sides of the mapping; without that the
+  output sits half a pixel off OpenCV's. The tone steps are the script's maths
+  unchanged and match it to within rounding.
+- **Corners are found on a copy at most `DETECT_SIZE` px**, with the opening
+  kernel scaled to match, so detection costs ~0.1 s even on a 5000 px photo;
+  the warp and tone steps run at full resolution. The filter windows (41, 25,
+  61 px) are in full-resolution pixels, as in the script.
+- **Detection is a starting point.** The corners are draggable handles in the
+  photo view (grabbed with an offset, so they never jump to the pointer), and
+  a failed detection falls back to the photo's own edges with the reason in
+  the sidebar rather than an error box.
+- **The scan result is lazy and cached** on (image, corners, `ScanSettings`):
+  it is computed only in the Result view or on save, and settings changes are
+  settled for `SETTLE_MS` before re-processing, since a large photo takes a
+  second or so. The photo view never triggers processing.
 - **Dialogs start in `script_dir()`**, not the desktop or the last folder used:
   the photos live next to the script.
 - **Zoom is anchored at the cursor**; the view is stored as an image-space
@@ -186,7 +219,8 @@ Or double-click [run.bat](run.bat).
 ## Testing
 
 There is no test suite. Verify changes headlessly by importing
-`arthelper.grid` / `arthelper.compose` — neither touches tkinter — and
+`arthelper.grid` / `arthelper.compose` / `arthelper.scan` — none touches
+tkinter — and
 smoke-test the window by constructing `ArtHelperApp`, calling `app.after(...)` to
 drive zoom/pan, then `app.close()`.
 
@@ -202,6 +236,7 @@ pixels back.
 
 - Python 3.13, `from __future__ import annotations`, type hints on function
   signatures.
-- Standard library + Pillow only. Do not add dependencies without asking.
+- Standard library + Pillow + numpy only. Do not add dependencies without
+  asking.
 - Note that `.gitignore` excludes `*.png` and `*.jpg`, so sample images are not
   committed.

@@ -12,7 +12,15 @@ from PIL import Image
 from .common import OPEN_FILETYPES, load_image, script_dir
 from .compose_mode import ComposeMode
 from .grid_mode import GridMode
+from .scan_mode import ScanMode
 from .view import CanvasView
+
+# (key, button label, title word) for each mode, in the order of the switch.
+MODES = (
+    ("grid", "Grid mode", "Grid"),
+    ("compose", "Compose mode", "Compose"),
+    ("scan", "Scan mode", "Scan"),
+)
 
 
 class ArtHelperApp(tk.Tk):
@@ -29,13 +37,15 @@ class ArtHelperApp(tk.Tk):
         self.var_mode = tk.StringVar(value="grid")
         bar = ttk.Frame(self, padding=(10, 8))
         bar.pack(side="top", fill="x")
-        for value, label in (("grid", "Grid mode"), ("compose", "Compose mode")):
+        for value, label, _word in MODES:
             ttk.Radiobutton(
                 bar, text=label, value=value, variable=self.var_mode,
                 style="Toolbutton", width=14, command=self.show_mode,
             ).pack(side="left", padx=(0, 6))
         ttk.Label(
-            bar, text="Grid: raster over a photo.    Compose: plan a new picture in a frame.",
+            bar,
+            text="Grid: raster over a photo.    Compose: plan a new picture in a frame.    "
+            "Scan: clean up a photo of a drawing.",
             foreground="#777",
         ).pack(side="left", padx=12)
         ttk.Separator(self).pack(side="top", fill="x")
@@ -44,6 +54,10 @@ class ArtHelperApp(tk.Tk):
         self.body.pack(side="top", fill="both", expand=True)
         self.grid_mode = GridMode(self)
         self.compose_mode = ComposeMode(self)
+        self.scan_mode = ScanMode(self)
+        self.modes: dict[str, CanvasView] = {
+            "grid": self.grid_mode, "compose": self.compose_mode, "scan": self.scan_mode,
+        }
         self.current: CanvasView = self.grid_mode
         self.show_mode()
 
@@ -56,8 +70,8 @@ class ArtHelperApp(tk.Tk):
     # -------------------------------------------------------- mode switching
 
     def show_mode(self) -> None:
-        target = self.compose_mode if self.var_mode.get() == "compose" else self.grid_mode
-        for mode in (self.grid_mode, self.compose_mode):
+        target = self.modes.get(self.var_mode.get(), self.grid_mode)
+        for mode in self.modes.values():
             if mode is not target:
                 mode.pack_forget()
         target.pack(fill="both", expand=True)
@@ -66,7 +80,7 @@ class ArtHelperApp(tk.Tk):
         target.request_redraw()
 
     def update_title(self) -> None:
-        mode = "Compose" if self.var_mode.get() == "compose" else "Grid"
+        mode = next((word for key, _l, word in MODES if key == self.var_mode.get()), "Grid")
         if self.path is None or self.image is None:
             self.title(f"Art Helper - {mode} mode")
         else:
@@ -76,11 +90,11 @@ class ArtHelperApp(tk.Tk):
     # ----------------------------------------------------------------- image
 
     def set_image(self, path: Path, image: Image.Image) -> None:
-        """Hand a freshly opened photo to both modes."""
+        """Hand a freshly opened photo to every mode."""
         self.path = path
         self.image = image
-        self.grid_mode.set_image(path, image)
-        self.compose_mode.set_image(path, image)
+        for mode in self.modes.values():
+            mode.set_image(path, image)
         self.update_title()
 
     def open_image(self) -> None:
@@ -112,7 +126,7 @@ class ArtHelperApp(tk.Tk):
 
     def close(self) -> None:
         """Cancel pending redraws so Tk does not fire them on a dead window."""
-        for mode in (self.grid_mode, self.compose_mode):
+        for mode in self.modes.values():
             mode.cancel_redraw()
         self.destroy()
 

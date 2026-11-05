@@ -1,7 +1,7 @@
 # Art Helper
 
-A small desktop tool for preparing a drawing. It has two modes, switched with
-the buttons in the top left:
+A small desktop tool for preparing a drawing. It has three modes, switched
+with the buttons in the top left:
 
 - **Grid mode** draws a reference grid onto a photo, so you can sketch
   difficult subjects square by square instead of building the grid by hand in
@@ -9,6 +9,9 @@ the buttons in the top left:
 - **Compose mode** plans a new picture: you set the final frame size, drop a
   photo into it, block areas out with hollow rectangles and circles, and move
   and scale everything until the composition works.
+- **Scan mode** turns a hand-held photo of a finished drawing into a clean
+  image for the website: it finds the sheet, squares up the perspective, crops
+  away the table and evens out the paper white and the ink black.
 
 ![The app showing a 125 px red raster over a drawing](examples/screenshot.png)
 
@@ -86,10 +89,42 @@ the buttons in the top left:
   PNG keeps erased background as transparency; JPEG and BMP cannot, so those
   get white there instead.
 
+## Scan mode
+
+- Open a photo of a drawing lying on a table. The sheet is found
+  automatically by its lack of colour (paper is nearly grey, wood or cloth is
+  not), so a coloured, reasonably plain background works best.
+- **Photo + corners** shows the photo with the four detected paper corners.
+  If one is off, drag its handle to the right spot; **Detect again** goes back
+  to the automatic guess and **Whole photo** puts the corners on the photo's
+  own edges. When detection fails outright the corners start at the edges and
+  the sidebar says why.
+- **Result** shows what will be saved: the sheet squared up and cropped, with
+  - **Even out the lighting**: the paper becomes one even, neutral white,
+    however the light fell on it,
+  - **Even out the blacks**: ink that glare turned grey in places is brought
+    back to the same black everywhere,
+  - **Make the darkest ink black**: a final contrast stretch.
+
+  Each step can be switched off.
+- **Paper shape** fixes the long : short ratio when you know it: `1.414` for
+  A4 / A3, or type `3:2`, `297 x 210` and so on. Left at *From the photo* the
+  ratio is measured, which is a little less exact when the photo is taken at
+  a steep angle.
+- **Trim each edge** cuts a sliver (0.5 % of the width by default) off every
+  side so no table or paper-edge shadow survives; **Paper white** sets how
+  bright the paper ends up (250 by default, just shy of pure white).
+- **Save result as…** writes `<name>_clean.png` next to the photo.
+- **Clean a whole folder…** runs every photo in a folder with the current
+  settings and automatic corners, writing `<name>_clean.png` files to a folder
+  you choose, and lists any photo it could not handle. Open those one at a
+  time and place the corners by hand.
+
 ## Requirements
 
 - Python 3.10+ with tkinter (included in the standard Windows installer)
 - [Pillow](https://python-pillow.org/)
+- [numpy](https://numpy.org/) (scan mode's image maths)
 
 ## Setup
 
@@ -107,7 +142,7 @@ python -m venv .venv
 On Windows you can also double-click `run.bat`.
 
 1. Choose a photo in the file dialog (or Cancel and use **Open photo…** in the
-   window; both modes share the photo you open).
+   window; all modes share the photo you open).
 2. Set thickness, spacing and colour in the left panel — the preview updates as
    you type.
 3. Zoom with the mouse wheel or the `-` / `+` / `Fit` / `100%` buttons; drag to
@@ -118,7 +153,8 @@ On Windows you can also double-click `run.bat`.
    to the original.
 
 For compose mode, switch with **Compose mode** in the top left, pick a frame
-size, then click the photo and scale it into place.
+size, then click the photo and scale it into place. For scan mode, switch
+with **Scan mode**, check the corners, look at **Result** and save.
 
 The preview keeps thin lines at least one screen pixel wide so they remain
 visible when zoomed out; the saved file always uses the exact thickness you
@@ -127,9 +163,9 @@ chose at full resolution.
 ## Layout
 
 The launcher is `art_helper.py`; the program itself lives in the
-`arthelper/` package — `grid.py` and `compose.py` hold the maths with no
-tkinter in sight, `view.py` the shared canvas, and `grid_mode.py` /
-`compose_mode.py` / `app.py` the interface.
+`arthelper/` package — `grid.py`, `compose.py` and `scan.py` hold the maths
+with no tkinter in sight, `view.py` the shared canvas, and `grid_mode.py` /
+`compose_mode.py` / `scan_mode.py` / `app.py` the interface.
 
 ## License
 
